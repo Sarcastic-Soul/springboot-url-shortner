@@ -3,7 +3,7 @@
 ## v0.1 — Foundation (Deployable Baseline)
 **Goal:** A running app with clean architecture, observability, and safe defaults.
 
-- [ ] Initialize backend (Spring Boot 3.x, Java 21, Maven) and frontend (React + Vite + Mantine).
+- [X] Initialize backend (Spring Boot 3.x, Java 21, Maven) and frontend (React + Vite + Mantine).
 - [ ] Add core dependencies only: Spring Security, Data JPA, Validation, Flyway, Actuator, Micrometer, MapStruct, Lombok.
 - [ ] Provision PostgreSQL + Valkey (single instance) with Docker Compose.
 - [ ] Set up package boundaries (`controller -> service -> repository`) and DTO-first API contracts.

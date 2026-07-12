@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: url-shortener
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+
+  endpoint:
+    health:
+      show-details: always

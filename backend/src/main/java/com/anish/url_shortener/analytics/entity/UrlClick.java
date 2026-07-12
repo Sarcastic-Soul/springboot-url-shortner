@@ -30,6 +30,16 @@ public class UrlClick {
 
     private String ipAddress;
 
+    private String ipHash;
+
+    private String country;
+
+    private String device;
+
+    private String browser;
+
+    private String os;
+
     @Column(columnDefinition = "TEXT")
     private String userAgent;
 

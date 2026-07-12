@@ -13,11 +13,23 @@ public record UpdateUrlRequest(
         @Size(max = 255)
         String title,
 
+        @Size(max = 1000)
+        String description,
+
+        @Size(max = 1000)
+        String tags,
+
         @Pattern(regexp = "^[a-zA-Z0-9_-]{4,30}$")
         String customAlias,
 
         Boolean active,
 
-        LocalDateTime expiresAt
+        LocalDateTime expiresAt,
+
+        @Size(min = 6, max = 128)
+        String password,
+
+        @jakarta.validation.constraints.Positive
+        Long maxClicks
 
 ) {}

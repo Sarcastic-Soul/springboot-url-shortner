@@ -31,6 +31,15 @@ public class Url {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(columnDefinition = "TEXT")
+    private String tags;
+
+    @Column(name = "password_hash")
+    private String passwordHash;
+
+    @Column(name = "max_clicks")
+    private Long maxClicks;
+
     @Builder.Default
     private Long clickCount = 0L;
 
@@ -46,7 +55,7 @@ public class Url {
 
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id")
     private User user;
 
     @PrePersist

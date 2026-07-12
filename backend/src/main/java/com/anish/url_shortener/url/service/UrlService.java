@@ -1,25 +1,34 @@
 package com.anish.url_shortener.url.service;
 
-import com.anish.url_shortener.analytics.entity.UrlClick;
-import com.anish.url_shortener.analytics.repository.UrlClickRepository;
+import com.anish.url_shortener.analytics.dto.ClickContext;
+import com.anish.url_shortener.analytics.service.AsyncAnalyticsService;
 import com.anish.url_shortener.auth.entity.User;
+import com.anish.url_shortener.common.util.ShortCodeGenerator;
+import com.anish.url_shortener.config.AppProperties;
+import com.anish.url_shortener.url.dto.CachedRedirectEntry;
 import com.anish.url_shortener.url.dto.CreateUrlRequest;
+import com.anish.url_shortener.url.dto.RedirectDecision;
 import com.anish.url_shortener.url.dto.UpdateUrlRequest;
 import com.anish.url_shortener.url.dto.UrlResponse;
 import com.anish.url_shortener.url.entity.Url;
 import com.anish.url_shortener.url.repository.UrlRepository;
-import com.anish.url_shortener.util.ShortCodeGenerator;
+
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import com.anish.url_shortener.url.dto.UrlSummaryResponse;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.time.LocalDateTime;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -27,25 +36,32 @@ import java.util.UUID;
 public class UrlService {
 
     private final UrlRepository urlRepository;
-    private final UrlClickRepository urlClickRepository;
+    private final ShortCodeGenerator shortCodeGenerator;
+    private final PasswordEncoder passwordEncoder;
+    private final UrlSafetyService urlSafetyService;
+    private final AsyncAnalyticsService asyncAnalyticsService;
+    private final RedirectCacheService redirectCacheService;
+    private final AppProperties appProperties;
 
     public UrlResponse create(CreateUrlRequest request) {
-
-        Authentication authentication =
-                SecurityContextHolder.getContext().getAuthentication();
-
-        User user = (User) authentication.getPrincipal();
+        User user = getCurrentUserOrNull();
+        boolean anonymous = user == null;
 
         String code = request.customAlias();
+        urlSafetyService.validateSafeDestination(request.originalUrl());
+        validateCreationPayload(request, anonymous);
 
         if (code == null || code.isBlank()) {
-
             do {
-                code = ShortCodeGenerator.generate(7);
+                code = shortCodeGenerator.generate();
             } while (urlRepository.existsByShortCode(code));
-
         } else if (urlRepository.existsByShortCode(code)) {
-            throw new IllegalArgumentException("Alias already exists");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Alias already exists");
+        }
+
+        String passwordHash = null;
+        if (!anonymous && request.password() != null && !request.password().isBlank()) {
+            passwordHash = passwordEncoder.encode(request.password());
         }
 
         Url url = Url.builder()
@@ -53,49 +69,55 @@ public class UrlService {
                 .originalUrl(request.originalUrl())
                 .title(request.title())
                 .description(request.description())
+                .tags(request.tags())
                 .user(user)
                 .expiresAt(request.expiresAt())
+                .passwordHash(passwordHash)
+                .maxClicks(!anonymous ? request.maxClicks() : null)
                 .build();
 
         urlRepository.save(url);
+        redirectCacheService.putForAnonymousRedirect(url);
 
         return new UrlResponse(
                 code,
-                "http://localhost:8080/" + code,
+                appProperties.getBaseUrl() + "/" + code,
                 url.getOriginalUrl()
         );
     }
 
-    public String getOriginalUrl(
-            String shortCode,
-            String ipAddress,
-            String userAgent,
-            String referer
-    ) {
-
-        Url url = urlRepository.findByShortCode(shortCode)
-                .orElseThrow(() -> new NoSuchElementException("Short URL not found"));
-
-        if (!url.getIsActive()) {
-            throw new IllegalArgumentException("Short URL is disabled");
+    public RedirectDecision resolveRedirect(String shortCode, ClickContext clickContext) {
+        Optional<CachedRedirectEntry> cachedRedirect = redirectCacheService.get(shortCode);
+        if (cachedRedirect.isPresent()) {
+            CachedRedirectEntry entry = cachedRedirect.get();
+            if (entry.expiresAt() != null && entry.expiresAt().isBefore(LocalDateTime.now())) {
+                redirectCacheService.evict(shortCode);
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Short URL has expired");
+            }
+            return new RedirectDecision(false, entry.originalUrl());
         }
 
-        url.setClickCount(url.getClickCount() + 1);
+        Url url = findRedirectableUrl(shortCode);
 
-        urlClickRepository.save(
+        if (url.getPasswordHash() != null && !url.getPasswordHash().isBlank()) {
+            return new RedirectDecision(true, null);
+        }
 
-                UrlClick.builder()
-                        .url(url)
-                        .ipAddress(ipAddress)
-                        .userAgent(userAgent)
-                        .referer(referer)
-                        .build()
+        return completeRedirect(url, clickContext);
+    }
 
-        );
+    public String verifyProtectedLink(String shortCode, String password, ClickContext clickContext) {
+        Url url = findRedirectableUrl(shortCode);
 
-        urlRepository.save(url);
+        if (url.getPasswordHash() == null || url.getPasswordHash().isBlank()) {
+            return completeRedirect(url, clickContext).originalUrl();
+        }
 
-        return url.getOriginalUrl();
+        if (!passwordEncoder.matches(password, url.getPasswordHash())) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid link password");
+        }
+
+        return completeRedirect(url, clickContext).originalUrl();
     }
 
     public Page<UrlSummaryResponse> getMyUrls(
@@ -139,7 +161,7 @@ public class UrlService {
 
                 url.getShortCode(),
 
-                "http://localhost:8080/" + url.getShortCode(),
+                appProperties.getBaseUrl() + "/" + url.getShortCode(),
 
                 url.getOriginalUrl(),
 
@@ -178,6 +200,14 @@ public class UrlService {
             url.setTitle(request.title());
         }
 
+        if (request.description() != null) {
+            url.setDescription(request.description());
+        }
+
+        if (request.tags() != null) {
+            url.setTags(request.tags());
+        }
+
         if (request.active() != null) {
             url.setIsActive(request.active());
         }
@@ -190,18 +220,27 @@ public class UrlService {
                 !request.customAlias().equals(url.getShortCode())) {
 
             if (urlRepository.existsByShortCode(request.customAlias())) {
-                throw new IllegalArgumentException("Alias already exists");
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Alias already exists");
             }
 
             url.setShortCode(request.customAlias());
         }
 
+        if (request.password() != null) {
+            url.setPasswordHash(passwordEncoder.encode(request.password()));
+        }
+
+        if (request.maxClicks() != null) {
+            url.setMaxClicks(request.maxClicks());
+        }
+
         urlRepository.save(url);
+        redirectCacheService.putForAnonymousRedirect(url);
 
         return new UrlSummaryResponse(
                 url.getId(),
                 url.getShortCode(),
-                "http://localhost:8080/" + url.getShortCode(),
+                appProperties.getBaseUrl() + "/" + url.getShortCode(),
                 url.getOriginalUrl(),
                 url.getTitle(),
                 url.getClickCount(),
@@ -221,7 +260,82 @@ public class UrlService {
         Url url = urlRepository.findByIdAndUser(id, user)
                 .orElseThrow(() -> new NoSuchElementException("URL not found"));
 
-        urlRepository.delete(url);
+        url.setIsActive(false);
+        urlRepository.save(url);
+        redirectCacheService.evict(url.getShortCode());
+    }
+
+    private RedirectDecision completeRedirect(Url url, ClickContext clickContext) {
+        url.setClickCount(url.getClickCount() + 1);
+        urlRepository.save(url);
+
+        if (url.getUser() != null) {
+            asyncAnalyticsService.trackClick(url, clickContext);
+        }
+
+        return new RedirectDecision(false, url.getOriginalUrl());
+    }
+
+    private Url findRedirectableUrl(String shortCode) {
+        Url url = urlRepository.findByShortCode(shortCode)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Short URL not found"));
+
+        if (!url.getIsActive()) {
+            throw new ResponseStatusException(HttpStatus.GONE, "Short URL is inactive");
+        }
+
+        if (url.getExpiresAt() != null && url.getExpiresAt().isBefore(LocalDateTime.now())) {
+            url.setIsActive(false);
+            urlRepository.save(url);
+            redirectCacheService.evict(url.getShortCode());
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Short URL has expired");
+        }
+
+        if (url.getMaxClicks() != null && url.getClickCount() >= url.getMaxClicks()) {
+            url.setIsActive(false);
+            urlRepository.save(url);
+            redirectCacheService.evict(url.getShortCode());
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Short URL is no longer available");
+        }
+
+        return url;
+    }
+
+    private void validateCreationPayload(CreateUrlRequest request, boolean anonymous) {
+        if (!anonymous) {
+            return;
+        }
+
+        if (request.expiresAt() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expiry date is required for anonymous links");
+        }
+
+        LocalDateTime maxExpiry = LocalDateTime.now().plusDays(appProperties.getAnonymous().getMaxExpiryDays());
+        if (request.expiresAt().isAfter(maxExpiry)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Anonymous expiry exceeds allowed window");
+        }
+
+        if (request.customAlias() != null && !request.customAlias().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Custom alias requires authentication");
+        }
+
+        if (request.description() != null || request.tags() != null || request.password() != null || request.maxClicks() != null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Advanced controls require authentication");
+        }
+    }
+
+    private User getCurrentUserOrNull() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return null;
+        }
+
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof User user) {
+            return user;
+        }
+
+        return null;
     }
 
 }

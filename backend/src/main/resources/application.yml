@@ -9,6 +9,32 @@ spring:
 
   flyway:
     enabled: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+app:
+  base-url: http://localhost:8080
+  anonymous:
+    max-expiry-days: 7
+  url-safety:
+    blocked-domains:
+      - phishing.test
+      - malware.test
+  geoip:
+    database-path:
+  rate-limit:
+    anonymous:
+      capacity: 5
+      refill-tokens: 5
+      refill-duration-minutes: 1
+    authenticated:
+      capacity: 60
+      refill-tokens: 60
+      refill-duration-minutes: 1
+  redirect-cache:
+    ttl-seconds: 86400
 
 management:
   endpoints:

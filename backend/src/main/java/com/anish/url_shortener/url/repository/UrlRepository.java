@@ -6,8 +6,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.Optional;
+import java.util.List;
 
 public interface UrlRepository extends JpaRepository<Url, UUID> {
 
@@ -26,4 +28,10 @@ public interface UrlRepository extends JpaRepository<Url, UUID> {
     );
 
     Optional<Url> findByIdAndUser(UUID id, User user);
+
+    long countByUser(User user);
+
+    long deleteByUserIsNullAndExpiresAtBefore(LocalDateTime now);
+
+    List<Url> findAllByUserIsNullAndExpiresAtBefore(LocalDateTime now);
 }

@@ -1,6 +1,8 @@
 package com.anish.url_shortener.url.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDateTime;
 
@@ -16,8 +18,18 @@ public record CreateUrlRequest(
 
         String title,
 
+        @Size(max = 1000)
         String description,
 
-        LocalDateTime expiresAt
+        @Size(max = 1000)
+        String tags,
+
+        LocalDateTime expiresAt,
+
+        @Size(min = 6, max = 128)
+        String password,
+
+        @Positive
+        Long maxClicks
 
 ) {}

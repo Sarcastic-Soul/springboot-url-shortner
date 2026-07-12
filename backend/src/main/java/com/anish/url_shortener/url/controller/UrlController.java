@@ -1,9 +1,14 @@
 package com.anish.url_shortener.url.controller;
 
 import com.anish.url_shortener.url.dto.CreateUrlRequest;
+import com.anish.url_shortener.url.dto.PasswordRequiredResponse;
+import com.anish.url_shortener.url.dto.RedirectDecision;
 import com.anish.url_shortener.url.dto.UpdateUrlRequest;
 import com.anish.url_shortener.url.dto.UrlResponse;
+import com.anish.url_shortener.url.dto.VerifyPasswordRequest;
+import com.anish.url_shortener.url.dto.VerifyPasswordResponse;
 import com.anish.url_shortener.url.service.UrlService;
+import com.anish.url_shortener.analytics.dto.ClickContext;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -15,6 +20,8 @@ import org.springframework.data.domain.Page;
 
 import java.net.URI;
 import java.util.UUID;
+
+import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 
 @RestController
 @RequiredArgsConstructor
@@ -30,31 +37,44 @@ public class UrlController {
     }
 
     @GetMapping("/{shortCode}")
-    public ResponseEntity<Void> redirect(
+    public ResponseEntity<?> redirect(
 
             @PathVariable String shortCode,
 
             HttpServletRequest request
 
     ) {
+        ClickContext clickContext = clickContextFrom(request);
+        RedirectDecision decision = urlService.resolveRedirect(shortCode, clickContext);
 
-        String originalUrl = urlService.getOriginalUrl(
-
-                shortCode,
-
-                request.getRemoteAddr(),
-
-                request.getHeader("User-Agent"),
-
-                request.getHeader("Referer")
-
-        );
+        if (decision.passwordRequired()) {
+            return ResponseEntity.status(UNAUTHORIZED).body(
+                    new PasswordRequiredResponse(
+                            "PASSWORD_REQUIRED",
+                            "This link requires a password."
+                    )
+            );
+        }
 
         return ResponseEntity
                 .status(302)
-                .location(URI.create(originalUrl))
+                .location(URI.create(decision.originalUrl()))
                 .build();
 
+    }
+
+    @PostMapping("/api/v1/urls/{shortCode}/verify")
+    public VerifyPasswordResponse verifyPassword(
+            @PathVariable String shortCode,
+            @Valid @RequestBody VerifyPasswordRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        String originalUrl = urlService.verifyProtectedLink(
+                shortCode,
+                request.password(),
+                clickContextFrom(servletRequest)
+        );
+        return new VerifyPasswordResponse(originalUrl);
     }
 
     @GetMapping("/api/v1/urls")
@@ -101,6 +121,22 @@ public class UrlController {
         urlService.delete(id);
 
         return ResponseEntity.noContent().build();
+    }
+
+    private ClickContext clickContextFrom(HttpServletRequest request) {
+        return new ClickContext(
+                clientIpFrom(request),
+                request.getHeader("User-Agent"),
+                request.getHeader("Referer")
+        );
+    }
+
+    private String clientIpFrom(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            return forwardedFor.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
     }
 
 }

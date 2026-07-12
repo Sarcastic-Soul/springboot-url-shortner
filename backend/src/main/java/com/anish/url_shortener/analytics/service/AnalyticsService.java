@@ -52,6 +52,10 @@ public class AnalyticsService {
         return new ClickHistoryResponse(
                 click.getClickedAt(),
                 click.getIpAddress(),
+                click.getCountry(),
+                click.getDevice(),
+                click.getBrowser(),
+                click.getOs(),
                 click.getReferer(),
                 click.getUserAgent()
         );

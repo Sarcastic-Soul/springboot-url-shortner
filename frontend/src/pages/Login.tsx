@@ -4,8 +4,10 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authApi } from '../api/auth';
 import { useAuth } from '../contexts/AuthContext';
+import { useMantineTheme } from '@mantine/core';
 
 export default function Login() {
+  const theme = useMantineTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -56,7 +58,7 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.currentTarget.value)}
               />
-              <Button type="submit" fullWidth loading={loading} mt="md" variant="gradient" gradient={{ from: 'blue', to: 'cyan', deg: 90 }}>
+              <Button type="submit" fullWidth loading={loading} mt="md">
                 Sign in
               </Button>
             </Stack>
@@ -64,7 +66,7 @@ export default function Login() {
 
           <Text ta="center" size="sm">
             Don't have an account?{' '}
-            <Text component={Link} to="/register" c="blue" fw={500}>
+            <Text component={Link} to="/register" c={theme.primaryColor} fw={500}>
               Register
             </Text>
           </Text>

@@ -7,7 +7,10 @@ import type { UrlResponse } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
+import { useMantineTheme } from '@mantine/core';
+
 export default function Dashboard() {
+  const theme = useMantineTheme();
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +89,7 @@ export default function Dashboard() {
         <Stack align="center" gap="lg">
           <div>
             <Title order={1} ta="center">
-              <Text inherit c="blue" component="span">
+              <Text inherit c={theme.primaryColor} component="span">
                 TrimURL
               </Text>
             </Title>
@@ -123,7 +126,6 @@ export default function Dashboard() {
               size="md" 
               onClick={handleShorten} 
               loading={loading}
-              color="blue"
             >
               Shorten
             </Button>
@@ -251,7 +253,7 @@ export default function Dashboard() {
             </Table.Tbody>
           </Table>
           <Group justify="center" mt="lg">
-            <Button color="blue" onClick={() => navigate('/register')}>
+            <Button onClick={() => navigate('/register')}>
               Create Free Account
             </Button>
           </Group>

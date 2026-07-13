@@ -2,6 +2,16 @@
 
 An advanced, full-stack URL shortening platform built for performance, security, and scalability. This project features a robust Spring Boot backend handling analytics and redirection, coupled with a fast, modern React frontend.
 
+## 📸 Application Showcase
+
+### Demo Video
+*(Add your demo video here: `![Demo Video](./media/demo.gif)`)*
+
+### Screenshots
+| Frontend Application | Grafana Dashboard | Swagger UI |
+|:---:|:---:|:---:|
+| ![App Screenshot](./assets/app.png) | ![Grafana Screenshot](./assets/graphana.png) | ![Swagger Screenshot](./assets/swagger.png) |
+
 ## ✨ Features
 - **Secure Authentication:** JWT-based stateless authentication.
 - **Advanced Analytics:** Track clicks, geographical locations, and User-Agent data for deep insights.
@@ -12,7 +22,31 @@ An advanced, full-stack URL shortening platform built for performance, security,
 - **Modern UI:** Responsive, accessible, and stunning frontend built with React, Vite, and Mantine.
 - **Production Ready:** Database migrations with Flyway, Dockerized infrastructure, and PostgreSQL.
 
-## 🏗️ Tech Stack
+## 🏗️ Architecture
+
+```mermaid
+graph TD
+    Client[Client / React SPA] -->|Port 8080| Nginx[Nginx Load Balancer]
+    Nginx -->|Round Robin| App1[Spring Boot App 1]
+    Nginx -->|Round Robin| App2[Spring Boot App 2]
+    Nginx -->|Round Robin| App3[Spring Boot App 3]
+    
+    App1 --> DB[(PostgreSQL)]
+    App2 --> DB
+    App3 --> DB
+    
+    App1 --> Redis[(Valkey / Redis)]
+    App2 --> Redis
+    App3 --> Redis
+    
+    Prometheus[Prometheus] -->|Scrape /actuator/prometheus| App1
+    Prometheus -->|Scrape /actuator/prometheus| App2
+    Prometheus -->|Scrape /actuator/prometheus| App3
+    
+    Grafana[Grafana] -->|Query Metrics| Prometheus
+```
+
+## 🛠️ Tech Stack
 
 ### Backend
 - **Framework:** Java 21 & Spring Boot 3
@@ -41,7 +75,7 @@ An advanced, full-stack URL shortening platform built for performance, security,
 
 ### 1. Clone the repository
 ```bash
-git clone <repository-url>
+git clone https://github.com/Sarcastic-Soul/springboot-url-shortner.git
 cd url_shortner
 ```
 

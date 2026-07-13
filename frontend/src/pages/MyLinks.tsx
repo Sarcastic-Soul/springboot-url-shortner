@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Container, Title, Table, Group, ActionIcon, Text, Pagination, Badge, Tooltip, Modal, Paper, Stack, Checkbox, Button, Switch } from '@mantine/core';
+import { Container, Title, Table, Group, ActionIcon, Text, Pagination, Badge, Tooltip, Modal, Paper, Stack, Checkbox, Button, Switch, useMantineTheme } from '@mantine/core';
 import { IconCopy, IconChartBar, IconTrash, IconSettings } from '@tabler/icons-react';
 import { urlApi } from '../api/urls';
 import { analyticsApi } from '../api/analytics';
@@ -8,6 +8,7 @@ import { notifications } from '@mantine/notifications';
 import { useDisclosure } from '@mantine/hooks';
 
 export default function MyLinks() {
+  const theme = useMantineTheme();
   const [page, setPage] = useState(0);
   const [urls, setUrls] = useState<PageResponse<UrlSummaryResponse> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -164,7 +165,7 @@ export default function MyLinks() {
               <Table.Td>
                 <Group gap="xs">
                   <Tooltip label="Analytics">
-                    <ActionIcon variant="light" color="blue" onClick={() => viewAnalytics(url.id)}>
+                    <ActionIcon variant="light" onClick={() => viewAnalytics(url.id)}>
                       <IconChartBar size={16} />
                     </ActionIcon>
                   </Tooltip>
@@ -196,8 +197,8 @@ export default function MyLinks() {
           <Text>Loading analytics...</Text>
         ) : selectedAnalytics ? (
           <Stack>
-            <Paper withBorder p="md" bg="var(--mantine-color-blue-light)">
-              <Title order={3} ta="center" c="blue">Total Clicks: {selectedAnalytics.totalClicks}</Title>
+            <Paper withBorder p="md" bg={`${theme.primaryColor}.1`}>
+              <Title order={3} ta="center" c={theme.primaryColor}>Total Clicks: {selectedAnalytics.totalClicks}</Title>
             </Paper>
             <Title order={4}>Recent Clicks</Title>
             {selectedAnalytics.recentClicks.length === 0 ? (

@@ -1,4 +1,4 @@
-import { TextInput, PasswordInput, Paper, Title, Container, Button, Stack, Text, Alert } from '@mantine/core';
+import { TextInput, PasswordInput, Paper, Title, Container, Button, Stack, Text, Alert, useMantineTheme } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -6,6 +6,7 @@ import { authApi } from '../api/auth';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Register() {
+  const theme = useMantineTheme();
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -64,7 +65,7 @@ export default function Register() {
                 value={password}
                 onChange={(e) => setPassword(e.currentTarget.value)}
               />
-              <Button type="submit" fullWidth loading={loading} mt="md" variant="gradient" gradient={{ from: 'blue', to: 'cyan', deg: 90 }}>
+              <Button type="submit" fullWidth loading={loading} mt="md">
                 Sign up
               </Button>
             </Stack>
@@ -72,7 +73,7 @@ export default function Register() {
 
           <Text ta="center" size="sm">
             Already have an account?{' '}
-            <Text component={Link} to="/login" c="blue" fw={500}>
+            <Text component={Link} to="/login" c={theme.primaryColor} fw={500}>
               Sign in
             </Text>
           </Text>

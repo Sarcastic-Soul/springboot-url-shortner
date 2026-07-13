@@ -8,9 +8,11 @@ An advanced, full-stack URL shortening platform built for performance, security,
 *(Add your demo video here: `![Demo Video](./media/demo.gif)`)*
 
 ### Screenshots
-| Frontend Application | Grafana Dashboard | Swagger UI |
-|:---:|:---:|:---:|
-| ![App Screenshot](./assets/app.png) | ![Grafana Screenshot](./assets/graphana.png) | ![Swagger Screenshot](./assets/swagger.png) |
+| Frontend Application | Grafana Dashboard |
+|:---:|:---:|
+| ![App Screenshot](./assets/app.png) | ![Grafana Screenshot](./assets/graphana.png) |
+| **Swagger UI** | **Architecture Diagram** |
+| ![Swagger Screenshot](./assets/swagger.png) | ![Architecture Diagram](./assets/architecture.png) |
 
 ## ✨ Features
 - **Secure Authentication:** JWT-based stateless authentication.
@@ -23,28 +25,6 @@ An advanced, full-stack URL shortening platform built for performance, security,
 - **Production Ready:** Database migrations with Flyway, Dockerized infrastructure, and PostgreSQL.
 
 ## 🏗️ Architecture
-
-```mermaid
-graph TD
-    Client[Client / React SPA] -->|Port 8080| Nginx[Nginx Load Balancer]
-    Nginx -->|Round Robin| App1[Spring Boot App 1]
-    Nginx -->|Round Robin| App2[Spring Boot App 2]
-    Nginx -->|Round Robin| App3[Spring Boot App 3]
-    
-    App1 --> DB[(PostgreSQL)]
-    App2 --> DB
-    App3 --> DB
-    
-    App1 --> Redis[(Valkey / Redis)]
-    App2 --> Redis
-    App3 --> Redis
-    
-    Prometheus[Prometheus] -->|Scrape /actuator/prometheus| App1
-    Prometheus -->|Scrape /actuator/prometheus| App2
-    Prometheus -->|Scrape /actuator/prometheus| App3
-    
-    Grafana[Grafana] -->|Query Metrics| Prometheus
-```
 
 ## 🛠️ Tech Stack
 

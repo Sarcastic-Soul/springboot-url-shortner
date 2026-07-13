@@ -8,11 +8,18 @@ An advanced, full-stack URL shortening platform built for performance, security,
 *(Add your demo video here: `![Demo Video](./media/demo.gif)`)*
 
 ### Screenshots
-| Frontend Application | Grafana Dashboard |
-|:---:|:---:|
-| ![App Screenshot](./assets/app.png) | ![Grafana Screenshot](./assets/graphana.png) |
-| **Swagger UI** | **Architecture Diagram** |
-| ![Swagger Screenshot](./assets/swagger.png) | ![Architecture Diagram](./assets/architecture.png) |
+
+**Frontend Application**
+![App Screenshot](./assets/app.png)
+
+**Grafana Dashboard**
+![Grafana Screenshot](./assets/graphana.png)
+
+**Swagger UI**
+![Swagger Screenshot](./assets/swagger.png)
+
+**Architecture Diagram**
+![Architecture Diagram](./assets/architecture.png)
 
 ## ✨ Features
 - **Secure Authentication:** JWT-based stateless authentication.

@@ -1,1 +1,40 @@
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.eclipse/
+
+# Backend (Java/Spring Boot/Maven)
+backend/target/
+backend/!**/src/main/**/target/
+backend/!**/src/test/**/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+backend/.sts4-cache
+backend/.settings
+backend/.classpath
+backend/.project
+backend/.factorypath
+backend/.springBeans
+backend/application-local.yml
+backend/application-prod.yml
+HELP.md
+
+# Frontend (Node.js/Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/*.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+frontend/.env.local
+frontend/.eslintcache
+frontend/.vite-temp/
+frontend/.vite/
+
+# Environment Variables
 .env
+.env.*
+!.env.example

@@ -17,16 +17,13 @@ public class AuthController {
 
     @PostMapping("/register")
     public AuthResponse register(
-            @Valid @RequestBody RegisterRequest request
-    ) {
-         System.out.println("REGISTER ENDPOINT HIT");
+            @Valid @RequestBody RegisterRequest request) {
         return authService.register(request);
     }
 
     @PostMapping("/login")
     public AuthResponse login(
-            @Valid @RequestBody LoginRequest request
-    ){
+            @Valid @RequestBody LoginRequest request) {
         return authService.login(request);
     }
 }

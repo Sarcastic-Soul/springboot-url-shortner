@@ -265,6 +265,22 @@ public class UrlService {
         redirectCacheService.evict(url.getShortCode());
     }
 
+    public void deleteBulk(java.util.List<UUID> ids) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        User user = (User) authentication.getPrincipal();
+
+        java.util.List<Url> urls = urlRepository.findAllById(ids).stream()
+                .filter(u -> u.getUser() != null && u.getUser().getId().equals(user.getId()))
+                .toList();
+
+        urls.forEach(url -> {
+            url.setIsActive(false);
+            redirectCacheService.evict(url.getShortCode());
+        });
+        
+        urlRepository.saveAll(urls);
+    }
+
     private RedirectDecision completeRedirect(Url url, ClickContext clickContext) {
         url.setClickCount(url.getClickCount() + 1);
         urlRepository.save(url);

@@ -1,122 +1,71 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
-import './App.css'
+import { AppShell, Group, Text, ActionIcon, useMantineColorScheme, Container, Button } from '@mantine/core';
+import { IconSun, IconMoon, IconBrandGithub, IconLogout, IconLink } from '@tabler/icons-react';
+import { Routes, Route, useNavigate, Link } from 'react-router-dom';
+import Dashboard from './pages/Dashboard';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import MyLinks from './pages/MyLinks';
+import { useAuth } from './contexts/AuthContext';
 
 function App() {
-  const [count, setCount] = useState(0)
+  const { colorScheme, toggleColorScheme } = useMantineColorScheme();
+  const { isAuthenticated, user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <AppShell header={{ height: 60 }} padding="md">
+      <AppShell.Header>
+        <Group h="100%" px="md" justify="space-between">
+          <Text component={Link} to="/" fw={700} size="xl" c="blue" style={{ textDecoration: 'none' }}>
+            TrimURL
+          </Text>
+          <Group>
+            {isAuthenticated && (
+              <Button component={Link} to="/links" variant="subtle" leftSection={<IconLink size={16} />}>
+                My Links
+              </Button>
+            )}
+            <ActionIcon variant="default" onClick={() => toggleColorScheme()} size="lg" aria-label="Toggle color scheme">
+              {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
+            </ActionIcon>
+            {!isAuthenticated ? (
+              <Button variant="light" size="sm" onClick={() => navigate('/login')}>Login</Button>
+            ) : (
+              <Group gap="sm">
+                <Text size="sm" c="dimmed" visibleFrom="xs">{user?.email}</Text>
+                <Button variant="subtle" color="red" size="sm" leftSection={<IconLogout size={16}/>} onClick={handleLogout}>
+                  Logout
+                </Button>
+              </Group>
+            )}
+          </Group>
+        </Group>
+      </AppShell.Header>
 
-      <div className="ticks"></div>
+      <AppShell.Main>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/links" element={<MyLinks />} />
+        </Routes>
+      </AppShell.Main>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      <Container size="md" pb="xl" pt="xl">
+        <Group justify="center" gap="sm">
+          <Text c="dimmed" size="sm">© 2026 TrimURL Platform.</Text>
+          <ActionIcon component="a" href="https://github.com/Sarcastic-Soul/springboot-url-shortner" target="_blank" variant="subtle" color="gray">
+            <IconBrandGithub size={20} />
+          </ActionIcon>
+        </Group>
+      </Container>
+    </AppShell>
+  );
 }
 
-export default App
+export default App;

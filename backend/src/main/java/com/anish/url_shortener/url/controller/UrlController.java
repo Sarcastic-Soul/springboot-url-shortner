@@ -20,6 +20,7 @@ import org.springframework.data.domain.Page;
 
 import java.net.URI;
 import java.util.UUID;
+import java.util.List;
 
 import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 
@@ -120,6 +121,14 @@ public class UrlController {
 
         urlService.delete(id);
 
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/api/v1/urls/bulk")
+    public ResponseEntity<Void> deleteBulk(
+            @RequestBody List<UUID> ids
+    ) {
+        urlService.deleteBulk(ids);
         return ResponseEntity.noContent().build();
     }
 

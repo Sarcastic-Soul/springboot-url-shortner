@@ -1,6 +1,6 @@
 import { AppShell, Group, Text, ActionIcon, useMantineColorScheme, Container, Button } from '@mantine/core';
 import { IconSun, IconMoon, IconBrandGithub, IconLogout, IconLink } from '@tabler/icons-react';
-import { Routes, Route, useNavigate, Link } from 'react-router-dom';
+import { Routes, Route, useNavigate, Link, Navigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -50,9 +50,16 @@ function App() {
       <AppShell.Main>
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/links" element={<MyLinks />} />
+          <Route path="/login" element={!isAuthenticated ? <Login /> : <Navigate to="/" />} />
+          <Route path="/register" element={!isAuthenticated ? <Register /> : <Navigate to="/" />} />
+          <Route path="/links" element={isAuthenticated ? <MyLinks /> : <Navigate to="/login" />} />
+          <Route path="*" element={
+            <Container style={{ textAlign: 'center', marginTop: '100px' }}>
+              <Text size="xl" fw={700}>404 - Page Not Found</Text>
+              <Text c="dimmed" mt="md">The page you are looking for doesn't exist.</Text>
+              <Button mt="xl" component={Link} to="/">Go Home</Button>
+            </Container>
+          } />
         </Routes>
       </AppShell.Main>
 

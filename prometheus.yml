@@ -5,4 +5,7 @@ scrape_configs:
   - job_name: 'url-shortener-backend'
     metrics_path: '/actuator/prometheus'
     static_configs:
-      - targets: ['host.docker.internal:8080']
+      - targets:
+          - 'backend-1:8080'
+          - 'backend-2:8080'
+          - 'backend-3:8080'

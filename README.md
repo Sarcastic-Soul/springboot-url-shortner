@@ -48,24 +48,18 @@ cd url_shortner
 ### 2. Environment Variables
 Copy `.env.example` to `.env` in the root directory (if available) or create a `.env` file with your database and JWT secrets.
 
-### 3. Start Infrastructure
-Run the required services (PostgreSQL, Redis, Prometheus, Grafana) using Docker Compose from the root directory.
+### 3. Start the Entire Platform
+The entire platform is fully containerized, including a horizontally scaled backend (3 instances behind Nginx), a React frontend, PostgreSQL, Valkey (Redis), Prometheus, and Grafana.
+
+Simply run:
 ```bash
-docker-compose up -d
+docker compose up -d --build
 ```
 
-### 4. Run Backend
-```bash
-cd backend
-./mvnw spring-boot:run
-```
-
-### 5. Run Frontend
-```bash
-cd frontend
-pnpm install
-pnpm dev
-```
+### 4. Access the Application
+- **Frontend (Web App):** [http://localhost:3000](http://localhost:3000)
+- **Backend APIs / Nginx Load Balancer:** [http://localhost:8080](http://localhost:8080)
+- **Swagger UI:** [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
 
 ## 📂 Project Structure
 - `/backend`: Spring Boot application containing all business logic, REST APIs, and database migrations.
@@ -78,11 +72,11 @@ Once the backend is running, you can explore and test the REST APIs using the in
 - **API Docs (JSON):** [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
 
 ## 📊 Monitoring (Grafana & Prometheus)
-The application exposes metrics via Spring Boot Actuator which are scraped by Prometheus and visualized in Grafana.
-1. Ensure your Docker Compose services are running.
+The application exposes metrics via Spring Boot Actuator which are scraped by Prometheus and automatically visualized in a pre-configured Grafana instance.
+1. Run `docker compose up -d`
 2. Navigate to Grafana at [http://localhost:3001](http://localhost:3001).
 3. **Login credentials:** `admin` / `admin`.
-4. Add the Prometheus data source (`http://prometheus:9090`) and import Spring Boot dashboards to view live metrics!
+4. Navigate to **Dashboards** -> **Spring Boot Default** folder to view the live JVM Micrometer dashboard. (No manual importing required!)
 
 ## 🧪 Testing
 The backend is equipped with unit tests built using JUnit 5 and Mockito. To run the test suite:

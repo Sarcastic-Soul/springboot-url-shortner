@@ -47,42 +47,57 @@ public class UrlService {
         User user = getCurrentUserOrNull();
         boolean anonymous = user == null;
 
-        String code = request.customAlias();
+        String customAlias = request.customAlias();
         urlSafetyService.validateSafeDestination(request.originalUrl());
         validateCreationPayload(request, anonymous);
-
-        if (code == null || code.isBlank()) {
-            do {
-                code = shortCodeGenerator.generate();
-            } while (urlRepository.existsByShortCode(code));
-        } else if (urlRepository.existsByShortCode(code)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Alias already exists");
-        }
 
         String passwordHash = null;
         if (!anonymous && request.password() != null && !request.password().isBlank()) {
             passwordHash = passwordEncoder.encode(request.password());
         }
 
-        Url url = Url.builder()
-                .shortCode(code)
-                .originalUrl(request.originalUrl())
-                .title(request.title())
-                .description(request.description())
-                .tags(request.tags())
-                .user(user)
-                .expiresAt(request.expiresAt())
-                .passwordHash(passwordHash)
-                .maxClicks(!anonymous ? request.maxClicks() : null)
-                .build();
+        boolean isCustomAlias = customAlias != null && !customAlias.isBlank();
+        int maxRetries = isCustomAlias ? 1 : 5;
+        Url savedUrl = null;
 
-        urlRepository.save(url);
-        redirectCacheService.putForAnonymousRedirect(url);
+        for (int i = 0; i < maxRetries; i++) {
+            String currentCode = isCustomAlias ? customAlias : shortCodeGenerator.generate();
+            
+            Url url = Url.builder()
+                    .shortCode(currentCode)
+                    .originalUrl(request.originalUrl())
+                    .title(request.title())
+                    .description(request.description())
+                    .tags(request.tags())
+                    .user(user)
+                    .expiresAt(request.expiresAt())
+                    .passwordHash(passwordHash)
+                    .maxClicks(!anonymous ? request.maxClicks() : null)
+                    .build();
+
+            try {
+                savedUrl = urlRepository.saveAndFlush(url);
+                break; // successfully saved
+            } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                if (isCustomAlias) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Alias already exists");
+                }
+                if (i == maxRetries - 1) {
+                    throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to generate unique short code");
+                }
+            }
+        }
+        
+        if (savedUrl == null) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to save URL");
+        }
+
+        redirectCacheService.putForAnonymousRedirect(savedUrl);
 
         return new UrlResponse(
-                code,
-                appProperties.getBaseUrl() + "/" + code,
-                url.getOriginalUrl()
+                savedUrl.getShortCode(),
+                appProperties.getBaseUrl() + "/" + savedUrl.getShortCode(),
+                savedUrl.getOriginalUrl()
         );
     }
 

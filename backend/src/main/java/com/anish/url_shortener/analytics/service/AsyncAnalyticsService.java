@@ -8,30 +8,35 @@ import com.anish.url_shortener.url.entity.Url;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.connection.stream.MapRecord;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class AsyncAnalyticsService {
 
-    private final UrlClickRepository urlClickRepository;
+    private final StringRedisTemplate redisTemplate;
     private final ClickEnrichmentService clickEnrichmentService;
 
     @Async("analyticsExecutor")
     public void trackClick(Url url, ClickContext context) {
         EnrichedClickContext enriched = clickEnrichmentService.enrich(context);
 
-        UrlClick click = UrlClick.builder()
-                .url(url)
-                .ipAddress(context.ipAddress())
-                .ipHash(enriched.ipHash())
-                .country(enriched.country())
-                .device(enriched.device())
-                .browser(enriched.browser())
-                .os(enriched.os())
-                .userAgent(context.userAgent())
-                .referer(context.referer())
-                .build();
+        Map<String, String> payload = new HashMap<>();
+        payload.put("urlId", url.getId().toString());
+        payload.put("ipAddress", context.ipAddress());
+        payload.put("ipHash", enriched.ipHash());
+        payload.put("country", enriched.country());
+        payload.put("device", enriched.device());
+        payload.put("browser", enriched.browser());
+        payload.put("os", enriched.os());
+        payload.put("userAgent", context.userAgent());
+        payload.put("referer", context.referer());
 
-        urlClickRepository.save(click);
+        redisTemplate.opsForStream().add(
+                MapRecord.create("analytics:click:stream", payload)
+        );
     }
 }

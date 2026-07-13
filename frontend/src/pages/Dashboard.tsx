@@ -233,6 +233,21 @@ export default function Dashboard() {
                 <Table.Td ta="center"><ThemeIcon color="red" variant="light" size="sm"><IconX size={14}/></ThemeIcon></Table.Td>
                 <Table.Td ta="center"><ThemeIcon color="teal" variant="light" size="sm"><IconCheck size={14}/></ThemeIcon></Table.Td>
               </Table.Tr>
+              <Table.Tr>
+                <Table.Td>Password Protection</Table.Td>
+                <Table.Td ta="center"><ThemeIcon color="red" variant="light" size="sm"><IconX size={14}/></ThemeIcon></Table.Td>
+                <Table.Td ta="center"><ThemeIcon color="teal" variant="light" size="sm"><IconCheck size={14}/></ThemeIcon></Table.Td>
+              </Table.Tr>
+              <Table.Tr>
+                <Table.Td>Click Limits</Table.Td>
+                <Table.Td ta="center"><ThemeIcon color="red" variant="light" size="sm"><IconX size={14}/></ThemeIcon></Table.Td>
+                <Table.Td ta="center"><ThemeIcon color="teal" variant="light" size="sm"><IconCheck size={14}/></ThemeIcon></Table.Td>
+              </Table.Tr>
+              <Table.Tr>
+                <Table.Td>Tags & Metadata</Table.Td>
+                <Table.Td ta="center"><ThemeIcon color="red" variant="light" size="sm"><IconX size={14}/></ThemeIcon></Table.Td>
+                <Table.Td ta="center"><ThemeIcon color="teal" variant="light" size="sm"><IconCheck size={14}/></ThemeIcon></Table.Td>
+              </Table.Tr>
             </Table.Tbody>
           </Table>
           <Group justify="center" mt="lg">

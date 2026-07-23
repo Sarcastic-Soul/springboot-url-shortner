@@ -1,33 +1,49 @@
-import { createContext, useState, useContext, ReactNode, useEffect } from 'react';
-import { MantineProvider, createTheme } from '@mantine/core';
+import { createContext, useState, useContext, useEffect } from 'react';
+import type { ReactNode } from 'react';
+
+type ThemeMode = 'light' | 'dark' | 'system';
 
 interface ThemeContextType {
-  primaryColor: string;
-  setPrimaryColor: (color: string) => void;
+  theme: ThemeMode;
+  setTheme: (theme: ThemeMode) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function AppThemeProvider({ children }: { children: ReactNode }) {
-  const [primaryColor, setPrimaryColor] = useState<string>(localStorage.getItem('primaryColor') || 'blue');
+  const [theme, setTheme] = useState<ThemeMode>((localStorage.getItem('theme') as ThemeMode) || 'system');
 
   useEffect(() => {
-    localStorage.setItem('primaryColor', primaryColor);
-  }, [primaryColor]);
-
-  const theme = createTheme({
-    primaryColor,
-    other: {
-      softBgLight: 'var(--mantine-color-gray-0)',
-      softBgDark: 'var(--mantine-color-dark-8)',
+    localStorage.setItem('theme', theme);
+    const isDark = 
+      theme === 'dark' || 
+      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    
+    if (isDark) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
     }
-  });
+  }, [theme]);
+
+  // Listen to system changes
+  useEffect(() => {
+    if (theme !== 'system') return;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e: MediaQueryListEvent) => {
+      if (e.matches) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    };
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, [theme]);
 
   return (
-    <ThemeContext.Provider value={{ primaryColor, setPrimaryColor }}>
-      <MantineProvider defaultColorScheme="auto" theme={theme}>
-        {children}
-      </MantineProvider>
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      {children}
     </ThemeContext.Provider>
   );
 }

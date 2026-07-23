@@ -47,8 +47,8 @@ public class AppProperties {
     @Getter
     @Setter
     public static class Tier {
-        private long capacity = 5;
-        private long refillTokens = 5;
+        private long capacity = 100000;
+        private long refillTokens = 100000;
         private long refillDurationMinutes = 1;
     }
 

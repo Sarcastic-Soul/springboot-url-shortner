@@ -55,14 +55,14 @@ class UrlServiceTest {
 
         when(appProperties.getAnonymous()).thenReturn(new AppProperties.Anonymous());
         when(shortCodeGenerator.generate()).thenReturn("abcdef");
-        when(urlRepository.existsByShortCode("abcdef")).thenReturn(false);
         when(appProperties.getBaseUrl()).thenReturn("http://localhost:8080");
+        when(urlRepository.saveAndFlush(any(Url.class))).thenAnswer(i -> i.getArgument(0));
 
         UrlResponse response = urlService.create(request);
 
         assertNotNull(response);
         assertEquals("abcdef", response.shortCode());
         assertEquals("http://localhost:8080/abcdef", response.shortUrl());
-        verify(urlRepository, times(1)).save(any(Url.class));
+        verify(urlRepository, times(1)).saveAndFlush(any(Url.class));
     }
 }

@@ -5,7 +5,6 @@ import java.util.UUID;
 
 public record UserProfileResponse(
         UUID id,
-        String username,
         String email,
         Boolean emailVerified,
         LocalDateTime createdAt,

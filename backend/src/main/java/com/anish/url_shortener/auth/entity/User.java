@@ -19,9 +19,6 @@ public class User {
     @GeneratedValue
     private UUID id;
 
-    @Column(nullable = false, unique = true, length = 30)
-    private String username;
-
     @Column(nullable = false, unique = true)
     private String email;
 

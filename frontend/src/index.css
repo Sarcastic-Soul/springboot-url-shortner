@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-background: var(--bg-background);
+  --color-foreground: var(--fg-foreground);
+  --color-divider: var(--border-divider);
+  
+  --color-default-100: var(--default-100);
+  --color-default-200: var(--default-200);
+  --color-default-700: var(--default-700);
+  
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+  --color-danger-600: var(--danger-600);
+}
+
+@layer base {
+  :root {
+    --bg-background: #f8fafc;
+    --fg-foreground: #0f172a;
+    --border-divider: #e2e8f0;
+    
+    --default-100: #f1f5f9;
+    --default-200: #e2e8f0;
+    --default-700: #334155;
+    
+    --primary: #2563eb;
+    --primary-foreground: #ffffff;
+    
+    --success: #16a34a;
+    --danger: #dc2626;
+    --danger-600: #dc2626;
+  }
+
+  .dark {
+    --bg-background: #020617;
+    --fg-foreground: #f1f5f9;
+    --border-divider: #1e293b;
+    
+    --default-100: #0f172a;
+    --default-200: #1e293b;
+    --default-700: #cbd5e1;
+    
+    --primary: #3b82f6;
+    --primary-foreground: #ffffff;
+    
+    --success: #22c55e;
+    --danger: #ef4444;
+    --danger-600: #ef4444;
+  }
+}

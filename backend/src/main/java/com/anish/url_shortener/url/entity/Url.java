@@ -20,7 +20,7 @@ public class Url {
     @GeneratedValue
     private UUID id;
 
-    @Column(nullable = false, unique = true, length = 10)
+    @Column(nullable = false, unique = true, length = 20)
     private String shortCode;
 
     @Column(nullable = false, columnDefinition = "TEXT")

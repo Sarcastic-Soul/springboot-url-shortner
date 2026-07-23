@@ -9,10 +9,24 @@ spring:
 
   flyway:
     enabled: true
+
+  datasource:
+    hikari:
+      maximum-pool-size: 60
+      minimum-idle: 5
+      connection-timeout: 3000
+      idle-timeout: 600000
+      max-lifetime: 1800000
   data:
     redis:
       host: localhost
       port: 6379
+
+server:
+  tomcat:
+    threads:
+      max: 1000
+    accept-count: 2000
 
 app:
   base-url: http://localhost:8080
@@ -26,12 +40,12 @@ app:
     database-path:
   rate-limit:
     anonymous:
-      capacity: 5
-      refill-tokens: 5
+      capacity: 100000
+      refill-tokens: 100000
       refill-duration-minutes: 1
     authenticated:
-      capacity: 60
-      refill-tokens: 60
+      capacity: 100000
+      refill-tokens: 100000
       refill-duration-minutes: 1
   redirect-cache:
     ttl-seconds: 86400

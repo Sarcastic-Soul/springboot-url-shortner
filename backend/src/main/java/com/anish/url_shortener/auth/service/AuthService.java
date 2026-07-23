@@ -24,11 +24,7 @@ public class AuthService {
         if(userRepository.existsByEmailIgnoreCase(request.email()))
             throw new IllegalArgumentException("Email already exists");
 
-        if(userRepository.existsByUsernameIgnoreCase(request.username()))
-            throw new IllegalArgumentException("Username already exists");
-
         User user = User.builder()
-                .username(request.username())
                 .email(request.email().toLowerCase())
                 .passwordHash(passwordEncoder.encode(request.password()))
                 .emailVerified(false)

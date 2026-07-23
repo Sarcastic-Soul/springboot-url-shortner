@@ -1,8 +1,8 @@
 FROM node:22-alpine
 WORKDIR /app
-COPY package.json pnpm-lock.yaml* ./
+COPY package.json package-lock.json* ./
 ENV CI=true
-RUN npm install -g pnpm && pnpm install
+RUN npm install
 COPY . .
 EXPOSE 3000
-CMD ["pnpm", "dev", "--host"]
+CMD ["npm", "run", "dev", "--", "--host"]

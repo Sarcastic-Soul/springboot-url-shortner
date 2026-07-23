@@ -20,7 +20,6 @@ public class UserProfileService {
 
         return new UserProfileResponse(
                 user.getId(),
-                user.getUsername(),
                 user.getEmail(),
                 user.getEmailVerified(),
                 user.getCreatedAt(),

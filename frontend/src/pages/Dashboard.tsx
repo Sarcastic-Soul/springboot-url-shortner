@@ -1,53 +1,53 @@
-import { Container, Title, Text, TextInput, Button, Group, Paper, Stack, CopyButton, ActionIcon, Select, Table, ThemeIcon, Accordion, PasswordInput, NumberInput, Textarea } from '@mantine/core';
-import { IconCheck, IconCopy, IconX, IconSettings } from '@tabler/icons-react';
-import { notifications } from '@mantine/notifications';
 import { useState } from 'react';
+import { Card, CardHeader, CardContent } from '../components/ui/Card';
+import { Skeleton } from '../components/ui/Skeleton';
+import { Input, TextArea, TextField, Label } from '../components/ui/Input';
+import { Button } from '../components/ui/Button';
+import { Select, ListBox } from '../components/ui/Select';
+import { Accordion } from '../components/ui/Accordion';
+import { Table, TableHeader, TableBody, TableColumn, TableRow, TableCell } from '../components/ui/Table';
+import { IconCheck, IconCopy, IconX, IconSettings } from '@tabler/icons-react';
+import toast from 'react-hot-toast';
 import { urlApi } from '../api/urls';
 import type { UrlResponse } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
-import { useMantineTheme } from '@mantine/core';
-
 export default function Dashboard() {
-  const theme = useMantineTheme();
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<UrlResponse | null>(null);
   const [expiryDays, setExpiryDays] = useState<string>('30');
-  
+
   // Advanced Features
   const [customAlias, setCustomAlias] = useState('');
   const [linkTitle, setLinkTitle] = useState('');
   const [description, setDescription] = useState('');
   const [tags, setTags] = useState('');
   const [password, setPassword] = useState('');
-  const [maxClicks, setMaxClicks] = useState<number | ''>('');
+  const [maxClicks, setMaxClicks] = useState<string>('');
 
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
 
   const handleShorten = async () => {
     if (!url) return;
-    
+
     setLoading(true);
-    setError(null);
     setResult(null);
-    
+
     try {
       let formattedUrl = url.trim();
       if (!formattedUrl.startsWith('http://') && !formattedUrl.startsWith('https://')) {
         formattedUrl = 'https://' + formattedUrl;
       }
-      
+
       const days = isAuthenticated ? parseInt(expiryDays, 10) : 7;
       const expiryDate = new Date();
       expiryDate.setDate(expiryDate.getDate() + days);
-      // Subtract a few minutes to prevent any strict backend clock drift failures
       expiryDate.setMinutes(expiryDate.getMinutes() - 5);
-      
-      const payload: any = { 
+
+      const payload: any = {
         originalUrl: formattedUrl,
         expiresAt: expiryDate.toISOString()
       };
@@ -70,195 +70,242 @@ export default function Dashboard() {
       setTags('');
       setPassword('');
       setMaxClicks('');
+      toast.success('URL shortened successfully!');
     } catch (err: any) {
       const errorMsg = err.response?.data?.error || err.response?.data?.message || 'Failed to shorten URL. Please try again.';
-      setError(errorMsg);
-      notifications.show({
-        title: 'Error',
-        message: errorMsg,
-        color: 'red',
-      });
+      toast.error(errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success('Copied to clipboard!');
+  };
+
   return (
-    <Container size="sm" mt={40}>
-      <Paper shadow="md" radius="md" p="xl">
-        <Stack align="center" gap="lg">
-          <div>
-            <Title order={1} ta="center">
-              <Text inherit c={theme.primaryColor} component="span">
-                TrimURL
-              </Text>
-            </Title>
-            <Text c="dimmed" ta="center" mt="sm">
-              The industry-grade platform to shorten your links and track analytics.
-            </Text>
+    <div className="container mx-auto px-4 max-w-3xl mt-12 mb-20">
+      <Card className="p-6">
+        <CardHeader className="flex-col items-center gap-2 mb-4">
+          <h1 className="text-4xl font-bold text-primary">TrimURL</h1>
+          <p className="text-default-500 text-center">
+            The industry-grade platform to shorten your links and track analytics.
+          </p>
+        </CardHeader>
+
+        <CardContent className="gap-6 flex flex-col">
+          <div className="flex flex-col sm:flex-row gap-4 items-end">
+            <div className="flex-1 w-full flex flex-col gap-1">
+              <TextField
+                isDisabled={loading}
+                value={url}
+                onChange={setUrl}
+                className="w-full flex flex-col gap-1"
+              >
+                <Label className="text-sm font-medium">Enter URL</Label>
+                <Input
+                  type="text"
+                  placeholder="https://your-long-url.com/very/long/path"
+                  className="w-full text-lg h-12"
+                />
+              </TextField>
+            </div>
+            {isAuthenticated && (
+              <div className="w-full sm:w-32 flex flex-col gap-1">
+                <div className="flex flex-col gap-1 text-sm font-medium">
+                  <label>Expiry</label>
+                  <Select.Root
+                    selectedKey={expiryDays}
+                    onSelectionChange={(k) => setExpiryDays(k as string)}
+                  >
+                    <Select.Trigger className="h-12 bg-default-100 hover:bg-default-200 transition-colors border-none rounded-lg px-3 flex justify-between items-center w-full">
+                      <Select.Value />
+                      <Select.Indicator />
+                    </Select.Trigger>
+                    <Select.Popover>
+                      <ListBox>
+                        <ListBox.Item id="1" textValue="1 Day">1 Day</ListBox.Item>
+                        <ListBox.Item id="7" textValue="7 Days">7 Days</ListBox.Item>
+                        <ListBox.Item id="30" textValue="30 Days">30 Days</ListBox.Item>
+                      </ListBox>
+                    </Select.Popover>
+                  </Select.Root>
+                </div>
+              </div>
+            )}
+            <Button
+              onPress={handleShorten}
+              isDisabled={loading}
+              variant="primary"
+              className="w-full sm:w-auto h-12 text-lg"
+            >
+              {loading ? "Shortening..." : "Shorten"}
+            </Button>
           </div>
 
-          <Group w="100%" gap="sm" align="flex-end">
-            <TextInput
-              placeholder="https://your-long-url.com/very/long/path"
-              label="Enter URL"
-              value={url}
-              onChange={(event) => setUrl(event.currentTarget.value)}
-              style={{ flex: 1 }}
-              size="md"
-              disabled={loading}
-            />
-            {isAuthenticated && (
-              <Select
-                label="Expiry"
-                data={[
-                  { value: '1', label: '1 Day' },
-                  { value: '7', label: '7 Days' },
-                  { value: '30', label: '30 Days' },
-                ]}
-                value={expiryDays}
-                onChange={(val) => setExpiryDays(val || '30')}
-                size="md"
-                w={120}
-              />
-            )}
-            <Button 
-              size="md" 
-              onClick={handleShorten} 
-              loading={loading}
-            >
-              Shorten
-            </Button>
-          </Group>
-
           {isAuthenticated && (
-            <Accordion variant="separated" w="100%" mt="xs">
-              <Accordion.Item value="advanced">
-                <Accordion.Control icon={<IconSettings size={18} />}>
-                  Advanced Options
-                </Accordion.Control>
-                <Accordion.Panel>
-                  <Stack gap="sm">
-                    <Group grow>
-                      <TextInput 
-                        label="Custom Alias" 
-                        placeholder="e.g. my-campaign" 
-                        value={customAlias}
-                        onChange={(e) => setCustomAlias(e.currentTarget.value)}
-                      />
-                      <PasswordInput 
-                        label="Password Protection" 
-                        placeholder="Secret code" 
-                        value={password}
-                        onChange={(e) => setPassword(e.currentTarget.value)}
-                      />
-                    </Group>
-                    <Group grow>
-                      <TextInput 
-                        label="Title" 
-                        placeholder="Campaign Title" 
-                        value={linkTitle}
-                        onChange={(e) => setLinkTitle(e.currentTarget.value)}
-                      />
-                      <TextInput 
-                        label="Tags" 
-                        placeholder="social, marketing (comma separated)" 
-                        value={tags}
-                        onChange={(e) => setTags(e.currentTarget.value)}
-                      />
-                    </Group>
-                    <NumberInput 
-                      label="Max Clicks (optional)" 
-                      placeholder="Limit number of uses" 
-                      value={maxClicks}
-                      onChange={(val) => setMaxClicks(val)}
-                      min={1}
-                    />
-                    <Textarea 
-                      label="Description" 
-                      placeholder="Optional notes for this link" 
-                      value={description}
-                      onChange={(e) => setDescription(e.currentTarget.value)}
-                    />
-                  </Stack>
-                </Accordion.Panel>
-              </Accordion.Item>
-            </Accordion>
+            <div className="w-full mt-4">
+              <Accordion variant="default">
+                <Accordion.Item id="1" aria-label="Advanced Options">
+                  <Accordion.Trigger className="font-medium">
+                    <div className="flex items-center gap-2">
+                      <IconSettings size={18} />
+                      <span>Advanced Options</span>
+                    </div>
+                  </Accordion.Trigger>
+                  <Accordion.Panel className="pb-4">
+                    <div className="flex flex-col gap-4">
+                      <div className="flex flex-col sm:flex-row gap-4">
+                        <TextField
+                          value={customAlias}
+                          onChange={setCustomAlias}
+                          className="flex-1 flex flex-col gap-1"
+                        >
+                          <Label className="text-sm font-medium">Custom Alias</Label>
+                          <Input placeholder="e.g. my-campaign" />
+                        </TextField>
+                        <TextField
+                          value={password}
+                          onChange={setPassword}
+                          className="flex-1 flex flex-col gap-1"
+                        >
+                          <Label className="text-sm font-medium">Password Protection</Label>
+                          <Input type="password" placeholder="Secret code" />
+                        </TextField>
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-4">
+                        <TextField
+                          value={linkTitle}
+                          onChange={setLinkTitle}
+                          className="flex-1 flex flex-col gap-1"
+                        >
+                          <Label className="text-sm font-medium">Title</Label>
+                          <Input placeholder="Campaign Title" />
+                        </TextField>
+                        <TextField
+                          value={tags}
+                          onChange={setTags}
+                          className="flex-1 flex flex-col gap-1"
+                        >
+                          <Label className="text-sm font-medium">Tags</Label>
+                          <Input placeholder="social, marketing (comma separated)" />
+                        </TextField>
+                      </div>
+                      <TextField
+                        value={maxClicks}
+                        onChange={setMaxClicks}
+                        className="w-full flex flex-col gap-1"
+                      >
+                        <Label className="text-sm font-medium">Max Clicks (optional)</Label>
+                        <Input type="number" placeholder="Limit number of uses" min="1" />
+                      </TextField>
+                      <TextField
+                        value={description}
+                        onChange={setDescription}
+                        className="w-full flex flex-col gap-1"
+                      >
+                        <Label className="text-sm font-medium">Description</Label>
+                        <TextArea placeholder="Optional notes for this link" rows={3} />
+                      </TextField>
+                    </div>
+                  </Accordion.Panel>
+                </Accordion.Item>
+              </Accordion>
+            </div>
           )}
 
-          {result && (
-            <Paper withBorder p="md" w="100%">
-              <Group justify="space-between">
-                <Text fw={500}>{result.shortUrl || `http://localhost:8080/${result.shortCode}`}</Text>
-                <CopyButton value={result.shortUrl || `http://localhost:8080/${result.shortCode}`} timeout={2000}>
-                  {({ copied, copy }) => (
-                    <ActionIcon color={copied ? 'teal' : 'gray'} variant="subtle" onClick={copy}>
-                      {copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
-                    </ActionIcon>
-                  )}
-                </CopyButton>
-              </Group>
-            </Paper>
+          {loading && (
+            <Card className="border border-gray-200 dark:border-slate-800 mt-4 shadow-none">
+              <CardContent className="flex flex-row justify-between items-center py-4 px-6 gap-4">
+                 <Skeleton className="w-full max-w-sm h-6" />
+                 <Skeleton className="w-8 h-8 rounded-md" />
+              </CardContent>
+            </Card>
           )}
-        </Stack>
-      </Paper>
+
+          {!loading && result && (
+            <Card className="border border-success/30 bg-success/5 mt-4 shadow-none">
+              <CardContent className="flex flex-row justify-between items-center py-4 px-6">
+                <span className="font-medium text-lg truncate pr-4 text-success">
+                  {result.shortUrl || `http://localhost:8080/${result.shortCode}`}
+                </span>
+                <Button
+                  isIconOnly
+                  variant="ghost"
+                  aria-label="Copy URL"
+                  onPress={() => copyToClipboard(result.shortUrl || `http://localhost:8080/${result.shortCode}`)}
+                >
+                  <IconCopy size={20} />
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </CardContent>
+      </Card>
 
       {!isAuthenticated && (
-        <Paper mt="xl" p="xl" radius="md" shadow="md">
-          <Title order={3} ta="center" mb="xl">Why Create an Account?</Title>
-          <Table verticalSpacing="sm" striped>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Feature</Table.Th>
-                <Table.Th ta="center">Anonymous</Table.Th>
-                <Table.Th ta="center">Registered User</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              <Table.Tr>
-                <Table.Td>Custom Aliases</Table.Td>
-                <Table.Td ta="center"><ThemeIcon color="red" variant="light" size="sm"><IconX size={14}/></ThemeIcon></Table.Td>
-                <Table.Td ta="center"><ThemeIcon color="teal" variant="light" size="sm"><IconCheck size={14}/></ThemeIcon></Table.Td>
-              </Table.Tr>
-              <Table.Tr>
-                <Table.Td>Link Expiry</Table.Td>
-                <Table.Td ta="center">Max 7 days</Table.Td>
-                <Table.Td ta="center">Up to 30 days</Table.Td>
-              </Table.Tr>
-              <Table.Tr>
-                <Table.Td>Analytics Dashboard</Table.Td>
-                <Table.Td ta="center"><ThemeIcon color="red" variant="light" size="sm"><IconX size={14}/></ThemeIcon></Table.Td>
-                <Table.Td ta="center"><ThemeIcon color="teal" variant="light" size="sm"><IconCheck size={14}/></ThemeIcon></Table.Td>
-              </Table.Tr>
-              <Table.Tr>
-                <Table.Td>Manage Links</Table.Td>
-                <Table.Td ta="center"><ThemeIcon color="red" variant="light" size="sm"><IconX size={14}/></ThemeIcon></Table.Td>
-                <Table.Td ta="center"><ThemeIcon color="teal" variant="light" size="sm"><IconCheck size={14}/></ThemeIcon></Table.Td>
-              </Table.Tr>
-              <Table.Tr>
-                <Table.Td>Password Protection</Table.Td>
-                <Table.Td ta="center"><ThemeIcon color="red" variant="light" size="sm"><IconX size={14}/></ThemeIcon></Table.Td>
-                <Table.Td ta="center"><ThemeIcon color="teal" variant="light" size="sm"><IconCheck size={14}/></ThemeIcon></Table.Td>
-              </Table.Tr>
-              <Table.Tr>
-                <Table.Td>Click Limits</Table.Td>
-                <Table.Td ta="center"><ThemeIcon color="red" variant="light" size="sm"><IconX size={14}/></ThemeIcon></Table.Td>
-                <Table.Td ta="center"><ThemeIcon color="teal" variant="light" size="sm"><IconCheck size={14}/></ThemeIcon></Table.Td>
-              </Table.Tr>
-              <Table.Tr>
-                <Table.Td>Tags & Metadata</Table.Td>
-                <Table.Td ta="center"><ThemeIcon color="red" variant="light" size="sm"><IconX size={14}/></ThemeIcon></Table.Td>
-                <Table.Td ta="center"><ThemeIcon color="teal" variant="light" size="sm"><IconCheck size={14}/></ThemeIcon></Table.Td>
-              </Table.Tr>
-            </Table.Tbody>
-          </Table>
-          <Group justify="center" mt="lg">
-            <Button onClick={() => navigate('/register')}>
-              Create Free Account
-            </Button>
-          </Group>
-        </Paper>
+        <Card className="mt-12 p-6">
+          <CardHeader className="justify-center">
+            <h2 className="text-2xl font-bold">Why Create an Account?</h2>
+          </CardHeader>
+          <CardContent>
+            <Table aria-label="Features comparison table">
+              <TableHeader>
+                <TableColumn>FEATURE</TableColumn>
+                <TableColumn className="text-center">ANONYMOUS</TableColumn>
+                <TableColumn className="text-center">REGISTERED USER</TableColumn>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell>Custom Aliases</TableCell>
+                  <TableCell><div className="flex justify-center text-danger"><IconX size={18} /></div></TableCell>
+                  <TableCell><div className="flex justify-center text-success"><IconCheck size={18} /></div></TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell>Link Expiry</TableCell>
+                  <TableCell><div className="text-center text-default-500">Max 7 days</div></TableCell>
+                  <TableCell><div className="text-center text-success font-medium">Up to 30 days</div></TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell>Analytics Dashboard</TableCell>
+                  <TableCell><div className="flex justify-center text-danger"><IconX size={18} /></div></TableCell>
+                  <TableCell><div className="flex justify-center text-success"><IconCheck size={18} /></div></TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell>Manage Links</TableCell>
+                  <TableCell><div className="flex justify-center text-danger"><IconX size={18} /></div></TableCell>
+                  <TableCell><div className="flex justify-center text-success"><IconCheck size={18} /></div></TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell>Password Protection</TableCell>
+                  <TableCell><div className="flex justify-center text-danger"><IconX size={18} /></div></TableCell>
+                  <TableCell><div className="flex justify-center text-success"><IconCheck size={18} /></div></TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell>Click Limits</TableCell>
+                  <TableCell><div className="flex justify-center text-danger"><IconX size={18} /></div></TableCell>
+                  <TableCell><div className="flex justify-center text-success"><IconCheck size={18} /></div></TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell>Tags & Metadata</TableCell>
+                  <TableCell><div className="flex justify-center text-danger"><IconX size={18} /></div></TableCell>
+                  <TableCell><div className="flex justify-center text-success"><IconCheck size={18} /></div></TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+            <div className="flex justify-center mt-8">
+              <Button
+                variant="primary"
+                className="h-12 text-lg px-8"
+                onPress={() => navigate('/register')}
+              >
+                Create Free Account
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       )}
-    </Container>
+    </div>
   );
 }

@@ -13,13 +13,9 @@ An enterprise-grade, cloud-native URL shortening & analytics platform engineered
 
 ## 📸 Application Showcase
 
-| **Frontend Application** | **Interactive OpenAPI (Swagger)** |
-| :---: | :---: |
-| ![App Screenshot](./assets/app.png) | ![Swagger Screenshot](./assets/swagger.png) |
-
-| **System Architecture** | **Grafana Observability** |
-| :---: | :---: |
-| ![Architecture Diagram](./assets/architecture.png) | ![Grafana Screenshot](./assets/graphana.png) |
+| **Frontend Application** | **Interactive OpenAPI (Swagger)** | **Grafana Observability** |
+| :---: | :---: | :---: |
+| ![App Screenshot](./assets/app.png) | ![Swagger Screenshot](./assets/swagger.png) | ![Grafana Screenshot](./assets/graphana.png) |
 
 ---
 
@@ -36,34 +32,22 @@ An enterprise-grade, cloud-native URL shortening & analytics platform engineered
 
 ## 🏗️ Architecture & Traffic Flow
 
-```
-                      ┌────────────────────────┐
-                      │   Client / Web Browser │
-                      └───────────┬────────────┘
-                                  │
-                                  ▼
-                      ┌────────────────────────┐
-                      │  Nginx / Ingress LB    │
-                      └───────────┬────────────┘
-                                  │
-                                  ▼
-                  ┌────────────────────────────────┐
-                  │  Kubernetes Service / HPA      │
-                  │  (Scales 3 - 15 Backend Pods)  │
-                  └───────────────┬────────────────┘
-                                  │
-        ┌─────────────────────────┴─────────────────────────┐
-        ▼                                                   ▼
-┌─────────────────┐                                 ┌─────────────────┐
-│ Spring Boot Pod │                                 │ Spring Boot Pod │ ...
-└────────┬────────┘                                 └────────┬────────┘
-         │                                                   │
-         ├─────────────────────────┬─────────────────────────┤
-         ▼                         ▼                         ▼
-┌───────────────────┐    ┌───────────────────┐    ┌───────────────────┐
-│ PostgreSQL DB     │    │ Valkey (Redis)    │    │ Prometheus Metrics│
-│ (Persistent Data) │    │ (Cache & Limits)  │    │ (/actuator/prom)  │
-└───────────────────┘    └───────────────────┘    └───────────────────┘
+```mermaid
+flowchart TD
+    Client["🌐 Client / Browser"] --> Ingress["🔀 Nginx Ingress LB"]
+
+    subgraph K8s["☸️ Kubernetes Cluster"]
+        Ingress -->|Routes / | Frontend["🎨 React 19 Frontend"]
+        Ingress -->|Routes /api | HPA["⚡ Horizontal Pod Autoscaler (HPA)\n(Scales 3 - 15 Pods)"]
+        
+        HPA --> Pod1["☕ Spring Boot Pod 1"]
+        HPA --> Pod2["☕ Spring Boot Pod 2"]
+        HPA --> PodN["☕ Spring Boot Pod N"]
+        
+        Pod1 & Pod2 & PodN --> Postgres[("🐘 PostgreSQL 17\n(Persistent Storage)")]
+        Pod1 & Pod2 & PodN --> Valkey[("⚡ Valkey / Redis 8\n(Cache & Rate Limit)")]
+        Pod1 & Pod2 & PodN --> Actuator["📊 Prometheus / Actuator\n(Metrics Endpoint)"]
+    end
 ```
 
 ---
@@ -85,7 +69,7 @@ An enterprise-grade, cloud-native URL shortening & analytics platform engineered
 
 Performance tests are integrated directly into the CI/CD pipeline ([`.github/workflows/k6-load-testing.yml`](./.github/workflows/k6-load-testing.yml)). On every push or PR, a lightweight **KinD** cluster is spawned in GitHub Actions to run automated load suites against live Kubernetes deployments.
 
-📊 **Live Automated Report:** Latest run metrics are committed automatically to [`load_tests/PERFORMANCE_RESULTS.md`](./load_tests/PERFORMANCE_RESULTS.md).
+📊 **Live Automated Report:** Latest performance benchmarks are committed automatically to [`load_tests/PERFORMANCE_RESULTS.md`](./load_tests/PERFORMANCE_RESULTS.md).
 
 ### Performance Test Suites
 

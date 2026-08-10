@@ -1,22 +1,19 @@
 name: k6 Load & Performance Testing (KinD)
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
     inputs:
       run_mode:
         description: 'Test mode'
         required: true
-        default: 'all'
+        default: 'spike_and_soak'
         type: choice
         options:
-          - all
-          - load_test.js
+          - spike_and_soak
           - spike_test.js
           - soak_test.js
+          - load_test.js
+          - all
 
 jobs:
   k6-performance-test:
@@ -40,7 +37,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Build Backend Jar
         run: |
@@ -85,31 +82,41 @@ jobs:
         uses: grafana/setup-k6-action@v1
 
       - name: Run k6 Performance Test Suites
+        env:
+          RUN_MODE: ${{ github.event.inputs.run_mode || 'all' }}
         run: |
-          # Start background port forwarding to backend service
-          kubectl port-forward svc/url-shortener-backend-service 8080:8080 &
-          PORT_FORWARD_PID=$!
-          sleep 3
+          run_suite() {
+            SUITE_NAME=$1
+            SUMMARY_FILE=$2
+            
+            echo "=========================================="
+            echo "🚀 Executing: ${SUITE_NAME}"
+            echo "=========================================="
+            
+            pkill -f "port-forward" || true
+            sleep 1
+            kubectl port-forward svc/url-shortener-backend-service 8080:8080 &
+            PF_PID=$!
+            sleep 3
+            
+            API_URL=http://localhost:8080 k6 run --summary-export=${SUMMARY_FILE} load_tests/${SUITE_NAME} || true
+            
+            kill $PF_PID || true
+          }
 
-          # Execute Standard Load Test
-          echo "=========================================="
-          echo "🚀 Executing 1/3: Standard Load Test"
-          echo "=========================================="
-          API_URL=http://localhost:8080 k6 run --summary-export=k6-summary-load.json load_tests/load_test.js || true
+          MODE="${RUN_MODE:-spike_and_soak}"
 
-          # Execute Spike Test
-          echo "=========================================="
-          echo "💥 Executing 2/3: Spike Burst Test"
-          echo "=========================================="
-          API_URL=http://localhost:8080 k6 run --summary-export=k6-summary-spike.json load_tests/spike_test.js || true
+          if [ "$MODE" = "all" ] || [ "$MODE" = "load_test.js" ]; then
+            run_suite "load_test.js" "k6-summary-load.json"
+          fi
 
-          # Execute Soak Test
-          echo "=========================================="
-          echo "⏳ Executing 3/3: Soak / Endurance Test"
-          echo "=========================================="
-          API_URL=http://localhost:8080 k6 run --summary-export=k6-summary-soak.json load_tests/soak_test.js || true
+          if [ "$MODE" = "all" ] || [ "$MODE" = "spike_and_soak" ] || [ "$MODE" = "spike_test.js" ]; then
+            run_suite "spike_test.js" "k6-summary-spike.json"
+          fi
 
-          kill $PORT_FORWARD_PID || true
+          if [ "$MODE" = "all" ] || [ "$MODE" = "spike_and_soak" ] || [ "$MODE" = "soak_test.js" ]; then
+            run_suite "soak_test.js" "k6-summary-soak.json"
+          fi
 
       - name: Generate Executive Summary & Save to File
         if: always()
@@ -126,43 +133,51 @@ jobs:
           ];
 
           const timestamp = new Date().toISOString();
+          let tableMd = "| Test Suite | Total Requests | Throughput (RPS) | Success Rate | Avg Latency | p95 Latency | Status |\n";
+          tableMd += "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n";
+
+          const getMetric = (m, key) => m && m[key] ? (m[key].values || m[key]) : null;
+
+          suites.forEach(s => {
+            if (!fs.existsSync(s.file)) {
+              tableMd += `| **${s.name}** | N/A | N/A | N/A | N/A | N/A | ⚠️ Skipped |\n`;
+              return;
+            }
+            try {
+              const data = JSON.parse(fs.readFileSync(s.file, "utf8"));
+              const m = data.metrics || {};
+              
+              const httpReqs = getMetric(m, "http_reqs");
+              const reqs = httpReqs && httpReqs.count ? httpReqs.count : 0;
+              const rps = httpReqs && httpReqs.rate ? httpReqs.rate.toFixed(1) : "0";
+              
+              const dur = getMetric(m, "http_req_duration{expected_response:true}") || getMetric(m, "http_req_duration");
+              const avgLat = dur && dur.avg ? `${dur.avg.toFixed(1)}ms` : "N/A";
+              const p95Lat = dur && dur["p(95)"] !== undefined ? `${dur["p(95)"].toFixed(1)}ms` : "N/A";
+              
+              const failed = getMetric(m, "http_req_failed");
+              let passRate = "100%";
+              if (failed) {
+                const ok = failed.fails || 0;
+                const total = (failed.passes || 0) + ok;
+                passRate = total > 0 ? `${((ok / total) * 100).toFixed(2)}%` : "100%";
+              }
+              
+              const failRatio = failed && failed.value !== undefined ? failed.value : 0;
+              const status = failRatio < 0.05 ? "✅ PASSED" : "⚠️ HEAVY LOAD";
+              
+              tableMd += `| **${s.name}** | ${reqs.toLocaleString()} | ${rps} req/s | ${passRate} | ${avgLat} | ${p95Lat} | ${status} |\n`;
+            } catch (e) {
+              tableMd += `| **${s.name}** | Parsing Error | - | - | - | - | ❌ Error |\n`;
+            }
+          });
+
           let md = `# 📊 Automated k6 Performance Test Results\n\n`;
           md += `> **Last Automated Run:** \`${timestamp}\`  \n`;
           md += `> **Git Commit:** \`${process.env.COMMIT_SHA || "local"}\`  \n`;
           md += `> **Branch:** \`${process.env.REF_NAME || "main"}\`  \n\n`;
           md += `---  \n\n`;
-          md += `## 🚀 Executive Benchmark Summary\n\n`;
-          md += `| Test Suite | Total Requests | Throughput (RPS) | Success Rate | Avg Latency | p95 Latency | Status |\n`;
-          md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
-
-          suites.forEach(s => {
-            if (!fs.existsSync(s.file)) {
-              md += `| **${s.name}** | N/A | N/A | N/A | N/A | N/A | ⚠️ Skipped |\n`;
-              return;
-            }
-            try {
-              const data = JSON.parse(fs.readFileSync(s.file, "utf8"));
-              const reqs = data.metrics.http_reqs ? data.metrics.http_reqs.values.count : 0;
-              const rps = data.metrics.http_reqs ? data.metrics.http_reqs.values.rate.toFixed(1) : "0";
-              const avgLat = data.metrics.http_req_duration ? `${data.metrics.http_req_duration.values.avg.toFixed(1)}ms` : "N/A";
-              const p95Lat = data.metrics.http_req_duration ? `${data.metrics.http_req_duration.values["p(95)"].toFixed(1)}ms` : "N/A";
-              
-              let passRate = "100%";
-              if (data.metrics.checks) {
-                const passes = data.metrics.checks.values.passes || 0;
-                const fails = data.metrics.checks.values.fails || 0;
-                const total = passes + fails;
-                passRate = total > 0 ? `${((passes / total) * 100).toFixed(2)}%` : "100%";
-              }
-              
-              const failedRate = data.metrics.http_req_failed ? data.metrics.http_req_failed.values.rate : 0;
-              const status = failedRate < 0.05 ? "✅ PASSED" : "⚠️ HEAVY LOAD";
-              
-              md += `| **${s.name}** | ${reqs.toLocaleString()} | ${rps} req/s | ${passRate} | ${avgLat} | ${p95Lat} | ${status} |\n`;
-            } catch (e) {
-              md += `| **${s.name}** | Parsing Error | - | - | - | - | ❌ Error |\n`;
-            }
-          });
+          md += `## 🚀 Executive Benchmark Summary\n\n` + tableMd;
 
           // Write to GitHub Step Summary Card
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);

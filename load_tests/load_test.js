@@ -36,9 +36,9 @@ export default function () {
   const createRes = http.post(`${BASE_URL}/api/v1/urls`, payload, params);
 
   check(createRes, {
-    'create status is 200 or 429': (r) => r.status === 200 || r.status === 429,
-    'has short code if 200': (r) => {
-      if (r.status !== 200) return true; // 429 Rate limited protection active
+    'create status is 200': (r) => r.status === 200,
+    'has short code': (r) => {
+      if (r.status !== 200) return false;
       try {
         return r.json('shortCode') !== undefined;
       } catch (e) {

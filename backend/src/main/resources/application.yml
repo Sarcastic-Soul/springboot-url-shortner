@@ -39,6 +39,7 @@ app:
   geoip:
     database-path:
   rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
     anonymous:
       capacity: 100000
       refill-tokens: 100000

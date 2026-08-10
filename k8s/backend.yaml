@@ -54,6 +54,11 @@ spec:
                 secretKeyRef:
                   name: url-shortener-secret
                   key: JWT_SECRET
+            - name: RATE_LIMIT_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: RATE_LIMIT_ENABLED
           resources:
             requests:
               cpu: 500m

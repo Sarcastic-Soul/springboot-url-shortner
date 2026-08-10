@@ -17,12 +17,15 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Map;
 
+import com.anish.url_shortener.config.AppProperties;
+
 @Component
 @RequiredArgsConstructor
 public class UrlCreationRateLimitFilter extends OncePerRequestFilter {
 
     private final RateLimitService rateLimitService;
     private final ObjectMapper objectMapper;
+    private final AppProperties appProperties;
 
     @Override
     protected void doFilterInternal(
@@ -51,6 +54,9 @@ public class UrlCreationRateLimitFilter extends OncePerRequestFilter {
     }
 
     private boolean shouldRateLimit(HttpServletRequest request) {
+        if (!appProperties.getRateLimit().isEnabled()) {
+            return false;
+        }
         return HttpMethod.POST.matches(request.getMethod()) && "/api/v1/urls".equals(request.getRequestURI());
     }
 

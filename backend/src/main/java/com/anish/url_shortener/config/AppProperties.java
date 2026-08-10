@@ -40,6 +40,7 @@ public class AppProperties {
     @Getter
     @Setter
     public static class RateLimit {
+        private boolean enabled = true;
         private Tier anonymous = new Tier();
         private Tier authenticated = new Tier();
     }

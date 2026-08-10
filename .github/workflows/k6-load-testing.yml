@@ -1,0 +1,97 @@
+name: k6 Load & Performance Testing (KinD)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: 'k6 test suite to run'
+        required: true
+        default: 'load_test.js'
+        type: choice
+        options:
+          - load_test.js
+          - spike_test.js
+          - soak_test.js
+
+jobs:
+  k6-performance-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 21 JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build Backend Jar
+        run: |
+          cd backend
+          ./mvnw clean package -DskipTests
+
+      - name: Build Docker Images
+        run: |
+          docker build -t url-shortener-backend:latest ./backend
+          docker build -t url-shortener-frontend:latest ./frontend
+
+      - name: Create KinD Cluster
+        uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: kind
+          wait: 120s
+
+      - name: Load Docker Images into KinD
+        run: |
+          kind load docker-image url-shortener-backend:latest --name kind
+          kind load docker-image url-shortener-frontend:latest --name kind
+
+      - name: Install Metrics Server (for HPA)
+        run: |
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+          kubectl patch deployment metrics-server -n kube-system --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
+          kubectl rollout status deployment metrics-server -n kube-system --timeout=120s
+
+      - name: Apply Kubernetes Manifests
+        run: |
+          kubectl apply -f k8s/
+
+      - name: Wait for Kubernetes Deployments to be Ready
+        run: |
+          kubectl rollout status deployment/postgres --timeout=180s
+          kubectl rollout status deployment/valkey --timeout=180s
+          kubectl rollout status deployment/url-shortener-backend --timeout=300s
+          kubectl rollout status deployment/url-shortener-frontend --timeout=180s
+
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run k6 Performance Test
+        env:
+          TEST_SUITE: ${{ github.event.inputs.test_suite || 'load_test.js' }}
+        run: |
+          # Forward backend port 8080 locally inside runner
+          kubectl port-forward svc/url-shortener-backend-service 8080:8080 &
+          PORT_FORWARD_PID=$!
+          
+          # Give port-forwarding a moment to bind
+          sleep 3
+          
+          echo "Running k6 test suite: load_tests/${TEST_SUITE}"
+          API_URL=http://localhost:8080 k6 run --summary-export=k6-summary.json load_tests/${TEST_SUITE}
+          
+          kill $PORT_FORWARD_PID || true
+
+      - name: Upload k6 Test Results Summary
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-summary-report
+          path: k6-summary.json

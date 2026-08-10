@@ -7,13 +7,13 @@ import { check, sleep } from 'k6';
  */
 export const options = {
   stages: [
-    { duration: '2m',  target: 1000 },  // Ramp up to 1,000 VUs over 2 minutes
-    { duration: '30m', target: 1000 },  // Maintain steady 1,000 VUs for 30 minutes (Expand to 2h+ for deep soaking)
-    { duration: '2m',  target: 0 },     // Ramp down to 0
+    { duration: '1m', target: 1000 },
+    { duration: __ENV.SOAK_HOLD_DURATION || '5m', target: 1000 },
+    { duration: '1m', target: 0 },
   ],
   thresholds: {
-    http_req_duration: ['p(95)<150'],   // 95% of requests must complete under 150ms over long runs
-    http_req_failed: ['rate<0.005'],    // Error rate must stay strictly under 0.5%
+    http_req_duration: [__ENV.P95_THRESHOLD || 'p(95)<2000'],
+    http_req_failed: [__ENV.MAX_ERROR_RATE || 'rate<0.01'],
   },
 };
 

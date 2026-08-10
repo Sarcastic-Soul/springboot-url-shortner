@@ -1,168 +1,141 @@
-# Industry-Grade URL Shortener Platform
+# ⚡ Distributed High-Throughput URL Shortener Platform
 
-An advanced, full-stack URL shortening platform built for performance, security, and scalability. This project features a robust Spring Boot backend handling analytics and redirection, coupled with a fast, modern React frontend.
+[![Java 21](https://img.shields.io/badge/Java-21-orange.svg)](https://www.oracle.com/java/)
+[![Spring Boot 3](https://img.shields.io/badge/Spring_Boot-3.4-green.svg)](https://spring.io/projects/spring-boot)
+[![React 19](https://img.shields.io/badge/React-19-blue.svg)](https://react.dev/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-HPA-326CE5.svg)](https://kubernetes.io/)
+[![k6 Load Tested](https://img.shields.io/badge/k6-Performance_Tested-7D64FF.svg)](https://k6.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+An enterprise-grade, cloud-native URL shortening & analytics platform engineered for low-latency redirection, distributed rate limiting, and horizontal autoscaling under heavy traffic loads.
+
+---
 
 ## 📸 Application Showcase
 
-### Demo Video
-*(Add your demo video here: `![Demo Video](./media/demo.gif)`)*
+| **Frontend Application** | **Interactive OpenAPI (Swagger)** |
+| :---: | :---: |
+| ![App Screenshot](./assets/app.png) | ![Swagger Screenshot](./assets/swagger.png) |
 
-### Screenshots
+| **System Architecture** | **Grafana Observability** |
+| :---: | :---: |
+| ![Architecture Diagram](./assets/architecture.png) | ![Grafana Screenshot](./assets/graphana.png) |
 
-**Frontend Application**
-![App Screenshot](./assets/app.png)
+---
 
+## ✨ Key Features
 
-**Swagger UI**
-![Swagger Screenshot](./assets/swagger.png)
+- **⚡ Sub-Millisecond Redirection:** High-performance caching layer powered by **Valkey** (Redis fork) & local in-memory Caffeine cache.
+- **📈 Real-Time Analytics Engine:** Tracks total clicks, geographical distribution (MaxMind GeoIP2), and device/browser breakdowns (UA-Parser).
+- **🛡️ Rate Limiting & Protection:** Distributed token bucket rate limiting per IP and user account to mitigate DDoS & scraping abuse.
+- **🔄 Auto-Scaling Infrastructure:** Kubernetes Horizontal Pod Autoscaler (HPA) dynamically scales backend replicas (3 to 15) based on CPU utilization and request throughput.
+- **🤖 Automated CI/CD Performance Testing:** GitHub Actions workflow executing `k6` load tests inside an isolated **KinD** (Kubernetes-in-Docker) cluster.
+- **🔐 Stateless Security:** JWT authentication with access/refresh token rotation and Spring Security integration.
 
-**Architecture Diagram**
-![Architecture Diagram](./assets/architecture.png)
+---
 
-## ✨ Features
-- **Secure Authentication:** JWT-based stateless authentication.
-- **Advanced Analytics:** Track clicks, geographical locations, and User-Agent data for deep insights.
-- **Robust Rate Limiting:** Prevent abuse with Redis-backed rate limiting per IP/user.
-- **High Performance Redirection:** Caching layer via Redis for ultra-fast link resolutions.
-- **API Documentation:** Interactive Swagger UI documentation via OpenAPI 3.
-- **Modern UI:** Responsive, accessible, and stunning frontend built with React, Vite, and Mantine.
-- **Production Ready:** Database migrations with Flyway, Dockerized infrastructure, and PostgreSQL.
-
-## 🏗️ Architecture
+## 🏗️ Architecture & Traffic Flow
 
 ```
-                       ┌────────────────────────┐
-                       │   Client / Web Browser │
-                       └───────────┬────────────┘
-                                   │
-                                   ▼
-                       ┌────────────────────────┐
-                       │  Nginx / Ingress LB    │
-                       └───────────┬────────────┘
-                                   │
-                                   ▼
-                   ┌────────────────────────────────┐
-                   │  Kubernetes Service / HPA      │
-                   │  (Scales 3 - 15 Backend Pods)   │
-                   └───────────────┬────────────────┘
-                                   │
-         ┌─────────────────────────┴─────────────────────────┐
-         ▼                                                   ▼
+                      ┌────────────────────────┐
+                      │   Client / Web Browser │
+                      └───────────┬────────────┘
+                                  │
+                                  ▼
+                      ┌────────────────────────┐
+                      │  Nginx / Ingress LB    │
+                      └───────────┬────────────┘
+                                  │
+                                  ▼
+                  ┌────────────────────────────────┐
+                  │  Kubernetes Service / HPA      │
+                  │  (Scales 3 - 15 Backend Pods)  │
+                  └───────────────┬────────────────┘
+                                  │
+        ┌─────────────────────────┴─────────────────────────┐
+        ▼                                                   ▼
 ┌─────────────────┐                                 ┌─────────────────┐
 │ Spring Boot Pod │                                 │ Spring Boot Pod │ ...
 └────────┬────────┘                                 └────────┬────────┘
          │                                                   │
          ├─────────────────────────┬─────────────────────────┤
          ▼                         ▼                         ▼
-┌───────────────────┐    ┌───────────────────┐
-│ PostgreSQL DB     │    │ Valkey (Redis)    │
-│ (Persistent Data) │    │ (Caching & Limits)│
-└───────────────────┘    └───────────────────┘
+┌───────────────────┐    ┌───────────────────┐    ┌───────────────────┐
+│ PostgreSQL DB     │    │ Valkey (Redis)    │    │ Prometheus Metrics│
+│ (Persistent Data) │    │ (Cache & Limits)  │    │ (/actuator/prom)  │
+└───────────────────┘    └───────────────────┘    └───────────────────┘
 ```
 
-## 🛠️ Tech Stack
+---
 
-### Backend
-- **Framework:** Java 21 & Spring Boot 3
-- **Database:** PostgreSQL (with Flyway Migrations)
-- **Caching & Rate Limiting:** Valkey (High-performance Redis fork)
-- **Security:** Spring Security & JWT
-- **Analytics:** MaxMind GeoIP2, UA-Parser
+## 🛠️ Technology Stack
 
-### Frontend
-- **Framework:** React 19 & Vite
-- **Language:** TypeScript
-- **State & Data Fetching:** React Query, Axios
-- **Styling:** Custom Vanilla CSS with dynamic Skeleton Loaders (No heavy component libraries for maximum performance)
-- **Forms & Validation:** React Hook Form, Zod
+| Layer | Component | Technologies |
+| :--- | :--- | :--- |
+| **Backend Core** | Framework & Runtime | Java 21, Spring Boot 3, Spring Security, Spring Data JPA |
+| **Database & Cache** | Persistence & Caching | PostgreSQL 17, Flyway Migrations, Valkey 8 (Redis), Caffeine |
+| **Frontend** | Single Page App | React 19, TypeScript, Vite, React Query, Axios, Custom Vanilla CSS |
+| **Infrastructure** | Container & Orchestration | Docker, Kubernetes (Deployments, Services, HPA, Ingress) |
+| **Observability** | Metrics & Monitoring | Spring Boot Actuator, Micrometer Prometheus, Grafana |
+| **Load Testing** | Performance Verification | k6 (Standard Load, Sudden Spike, and Endurance Soak suites) |
 
-### Infrastructure & Scaling
-- **Containerization:** Docker
-- **Orchestration:** Kubernetes (with Horizontal Pod Autoscaling manifests)
-- **Load Balancing:** Kubernetes Ingress (Nginx)
-- **Load Testing:** k6 (Tested up to 10,000+ RPS)
+---
 
-## 🚀 Getting Started
+## 🧪 Automated Load & Performance Testing (k6 + KinD)
 
-### Prerequisites
-- Java 21
-- Node.js 18+
-- Docker & Kubernetes (e.g., Minikube, Docker Desktop with K8s enabled)
-- `kubectl` CLI
+Performance tests are integrated directly into the CI/CD pipeline ([`.github/workflows/k6-load-testing.yml`](./.github/workflows/k6-load-testing.yml)). On every push or PR, a lightweight **KinD** cluster is spawned in GitHub Actions to run automated load suites against live Kubernetes deployments.
 
-### 1. Clone the repository
+📊 **Live Automated Report:** Latest run metrics are committed automatically to [`load_tests/PERFORMANCE_RESULTS.md`](./load_tests/PERFORMANCE_RESULTS.md).
+
+### Performance Test Suites
+
+1. **Standard Load Test** (`k6 run load_tests/load_test.js`)
+   * Ramps to **2,000 VUs**. Validates $p(95) < 200\text{ms}$ response latency.
+2. **Spike Burst Test** (`k6 run load_tests/spike_test.js`)
+   * Traffic burst from 100 to **4,000 VUs** in 10s. Verifies HPA pod auto-scaling and zero-downtime recovery.
+3. **Soak / Endurance Test** (`k6 run load_tests/soak_test.js`)
+   * Sustained **1,000 VUs** over 30+ minutes. Ensures no connection leaks or memory degradation.
+
+---
+
+## 🚀 Quickstart & Deployment
+
+### 1. Prerequisites
+- Java 21 & Node.js 18+
+- Docker & `kubectl` CLI
+- Kubernetes Cluster (e.g. Minikube or KinD)
+
+### 2. Deploy to Kubernetes
 ```bash
-git clone https://github.com/Sarcastic-Soul/springboot-url-shortner.git
-cd url_shortner
-```
-
-### 2. Environment Variables
-Copy `.env.example` to `.env` in the root directory (if available) or create a `.env` file with your database and JWT secrets.
-
-### 3. Start the Entire Platform
-The entire platform is designed to run on a Kubernetes cluster, including a horizontally scaled backend (via HPA), a React frontend, PostgreSQL, and Valkey (Redis).
-
-Ensure you have a Kubernetes cluster running (e.g., Minikube) and `kubectl` configured. If using Minikube, enable the Ingress and Metrics Server addons:
-```bash
+# Enable Ingress and Metrics Server (if using Minikube)
 minikube addons enable ingress
 minikube addons enable metrics-server
-```
 
-Apply the Kubernetes manifests:
-```bash
+# Apply Kubernetes manifests
 kubectl apply -f k8s/
 ```
 
-### 4. Access the Application
-If you have an Ingress controller running, you can access the platform at:
-- **Frontend (Web App):** [http://localhost](http://localhost) (or via your Ingress IP)
-- **Backend APIs:** [http://localhost/api](http://localhost/api)
-- **Swagger UI:** [http://localhost/swagger-ui/index.html](http://localhost/swagger-ui/index.html)
+### 3. Access Endpoints
+- **Frontend App:** `http://localhost` (or Ingress IP)
+- **Backend API:** `http://localhost/api/v1`
+- **Swagger Documentation:** `http://localhost/swagger-ui/index.html`
+- **Prometheus Metrics:** `http://localhost/actuator/prometheus`
 
-Alternatively, if using NodePorts on Minikube:
-- **Frontend:** `minikube service url-shortener-frontend-service --url`
-- **Backend API:** `minikube service url-shortener-backend-service --url`
+---
 
-## 📂 Project Structure
-- `/backend`: Spring Boot application containing all business logic, REST APIs, and database migrations.
-- `/frontend`: React SPA with routing and UI components.
-- `/k8s`: Production Kubernetes deployment manifests (Deployments, Services, ConfigMaps, Secrets, Ingress, and HPA).
-- `/load_tests`: k6 performance testing scripts (Spike test & Soak test).
-- `load_test.js`: k6 standard load test script.
+## 📂 Repository Structure
 
-## 📖 API Documentation (Swagger)
-Once the backend is running, you can explore and test the REST APIs using the interactive Swagger UI interface provided by OpenAPI:
-- **Swagger UI:** [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
-- **API Docs (JSON):** [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
-
-
-## 🧪 Testing
-
-### Backend Unit Tests
-The backend is equipped with unit tests built using JUnit 5 and Mockito. To run the test suite:
-```bash
-cd backend
-./mvnw test
+```
+.
+├── backend/          # Spring Boot 3 backend application & database migrations
+├── frontend/         # React 19 + Vite frontend application
+├── k8s/              # Production Kubernetes manifests (Deployments, HPA, Ingress)
+├── load_tests/       # k6 load testing scripts (Standard, Spike, Soak)
+└── .github/          # CI/CD workflows for automated KinD k6 performance testing
 ```
 
-### Performance & Reliability Testing (k6)
-The project includes three specialized performance test suites in `k6` to test horizontal scalability, traffic bursts, and endurance:
-
-1. **Standard Load Test** (staged throughput ramping):
-   ```bash
-   k6 run load_tests/load_test.js
-   ```
-2. **Spike Test** (sudden 4,000 VU traffic bursts & HPA recovery):
-   ```bash
-   k6 run load_tests/spike_test.js
-   ```
-3. **Soak / Endurance Test** (30+ minute steady high throughput):
-   ```bash
-   k6 run load_tests/soak_test.js
-   ```
-
-*Note: Pass `API_URL` when testing against Kubernetes (e.g., `API_URL=http://$(minikube ip):30080 k6 run load_test.js`).*
-
+---
 
 ## 📜 License
-This project is licensed under the MIT License.
+
+This project is licensed under the **MIT License**.

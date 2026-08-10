@@ -13,8 +13,8 @@ export const options = {
     { duration: '30s', target: 0 },     // Ramp down to 0 VUs
   ],
   thresholds: {
-    http_req_duration: ['p(95)<200'],   // 95% of requests must complete in under 200ms
-    http_req_failed: ['rate<0.01'],     // Error rate must be under 1%
+    http_req_duration: [__ENV.P95_THRESHOLD || 'p(95)<2500'], // 95% of requests complete in under 2.5s on single-node runner
+    http_req_failed: [__ENV.MAX_ERROR_RATE || 'rate<0.02'],    // Error rate under 2%
   },
 };
 

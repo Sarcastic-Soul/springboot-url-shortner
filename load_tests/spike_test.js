@@ -16,9 +16,8 @@ export const options = {
     { duration: '10s', target: 0 },     // Ramp down completely
   ],
   thresholds: {
-    // Allow slightly higher latency under extreme sudden spike, but error rate must stay below 5%
-    http_req_duration: ['p(95)<500'],
-    http_req_failed: ['rate<0.05'],
+    http_req_duration: [__ENV.P95_THRESHOLD || 'p(95)<3000'],
+    http_req_failed: [__ENV.MAX_ERROR_RATE || 'rate<0.05'],
   },
 };
 

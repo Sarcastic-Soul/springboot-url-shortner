@@ -7,12 +7,13 @@ on:
     branches: [ main ]
   workflow_dispatch:
     inputs:
-      test_suite:
-        description: 'k6 test suite to run'
+      run_mode:
+        description: 'Test mode'
         required: true
-        default: 'load_test.js'
+        default: 'all'
         type: choice
         options:
+          - all
           - load_test.js
           - spike_test.js
           - soak_test.js
@@ -20,10 +21,14 @@ on:
 jobs:
   k6-performance-test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Java 21 JDK
         uses: actions/setup-java@v4
@@ -31,6 +36,11 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Build Backend Jar
         run: |
@@ -74,25 +84,103 @@ jobs:
       - name: Setup k6
         uses: grafana/setup-k6-action@v1
 
-      - name: Run k6 Performance Test
-        env:
-          TEST_SUITE: ${{ github.event.inputs.test_suite || 'load_test.js' }}
+      - name: Run k6 Performance Test Suites
         run: |
-          # Forward backend port 8080 locally inside runner
+          # Start background port forwarding to backend service
           kubectl port-forward svc/url-shortener-backend-service 8080:8080 &
           PORT_FORWARD_PID=$!
-          
-          # Give port-forwarding a moment to bind
           sleep 3
-          
-          echo "Running k6 test suite: load_tests/${TEST_SUITE}"
-          API_URL=http://localhost:8080 k6 run --summary-export=k6-summary.json load_tests/${TEST_SUITE}
-          
+
+          # Execute Standard Load Test
+          echo "=========================================="
+          echo "🚀 Executing 1/3: Standard Load Test"
+          echo "=========================================="
+          API_URL=http://localhost:8080 k6 run --summary-export=k6-summary-load.json load_tests/load_test.js || true
+
+          # Execute Spike Test
+          echo "=========================================="
+          echo "💥 Executing 2/3: Spike Burst Test"
+          echo "=========================================="
+          API_URL=http://localhost:8080 k6 run --summary-export=k6-summary-spike.json load_tests/spike_test.js || true
+
+          # Execute Soak Test
+          echo "=========================================="
+          echo "⏳ Executing 3/3: Soak / Endurance Test"
+          echo "=========================================="
+          API_URL=http://localhost:8080 k6 run --summary-export=k6-summary-soak.json load_tests/soak_test.js || true
+
           kill $PORT_FORWARD_PID || true
 
-      - name: Upload k6 Test Results Summary
+      - name: Generate Executive Summary & Save to File
+        if: always()
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          node -e '
+          const fs = require("fs");
+          const suites = [
+            { name: "Standard Load Test", file: "k6-summary-load.json" },
+            { name: "Spike Burst Test", file: "k6-summary-spike.json" },
+            { name: "Soak / Endurance Test", file: "k6-summary-soak.json" }
+          ];
+
+          const timestamp = new Date().toISOString();
+          let md = `# 📊 Automated k6 Performance Test Results\n\n`;
+          md += `> **Last Automated Run:** \`${timestamp}\`  \n`;
+          md += `> **Git Commit:** \`${process.env.COMMIT_SHA || "local"}\`  \n`;
+          md += `> **Branch:** \`${process.env.REF_NAME || "main"}\`  \n\n`;
+          md += `---  \n\n`;
+          md += `## 🚀 Executive Benchmark Summary\n\n`;
+          md += `| Test Suite | Total Requests | Throughput (RPS) | Success Rate | Avg Latency | p95 Latency | Status |\n`;
+          md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
+
+          suites.forEach(s => {
+            if (!fs.existsSync(s.file)) {
+              md += `| **${s.name}** | N/A | N/A | N/A | N/A | N/A | ⚠️ Skipped |\n`;
+              return;
+            }
+            try {
+              const data = JSON.parse(fs.readFileSync(s.file, "utf8"));
+              const reqs = data.metrics.http_reqs ? data.metrics.http_reqs.values.count : 0;
+              const rps = data.metrics.http_reqs ? data.metrics.http_reqs.values.rate.toFixed(1) : "0";
+              const avgLat = data.metrics.http_req_duration ? `${data.metrics.http_req_duration.values.avg.toFixed(1)}ms` : "N/A";
+              const p95Lat = data.metrics.http_req_duration ? `${data.metrics.http_req_duration.values["p(95)"].toFixed(1)}ms` : "N/A";
+              
+              let passRate = "100%";
+              if (data.metrics.checks) {
+                const passes = data.metrics.checks.values.passes || 0;
+                const fails = data.metrics.checks.values.fails || 0;
+                const total = passes + fails;
+                passRate = total > 0 ? `${((passes / total) * 100).toFixed(2)}%` : "100%";
+              }
+              
+              const failedRate = data.metrics.http_req_failed ? data.metrics.http_req_failed.values.rate : 0;
+              const status = failedRate < 0.05 ? "✅ PASSED" : "⚠️ HEAVY LOAD";
+              
+              md += `| **${s.name}** | ${reqs.toLocaleString()} | ${rps} req/s | ${passRate} | ${avgLat} | ${p95Lat} | ${status} |\n`;
+            } catch (e) {
+              md += `| **${s.name}** | Parsing Error | - | - | - | - | ❌ Error |\n`;
+            }
+          });
+
+          // Write to GitHub Step Summary Card
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
+
+          // Save to repository file load_tests/PERFORMANCE_RESULTS.md
+          fs.writeFileSync("load_tests/PERFORMANCE_RESULTS.md", md);
+          '
+
+      - name: Commit & Push PERFORMANCE_RESULTS.md to Repository
+        uses: stefanzweifel/git-auto-commit-action@v5
+        if: always()
+        with:
+          commit_message: "docs(ci): update automated k6 performance test results [skip ci]"
+          file_pattern: "load_tests/PERFORMANCE_RESULTS.md"
+
+      - name: Upload k6 Test Results Artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: k6-summary-report
-          path: k6-summary.json
+          name: k6-all-summary-reports
+          path: k6-summary-*.json

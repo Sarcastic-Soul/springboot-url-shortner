@@ -12,8 +12,6 @@ An advanced, full-stack URL shortening platform built for performance, security,
 **Frontend Application**
 ![App Screenshot](./assets/app.png)
 
-**Grafana Dashboard**
-![Grafana Screenshot](./assets/graphana.png)
 
 **Swagger UI**
 ![Swagger Screenshot](./assets/swagger.png)
@@ -26,19 +24,48 @@ An advanced, full-stack URL shortening platform built for performance, security,
 - **Advanced Analytics:** Track clicks, geographical locations, and User-Agent data for deep insights.
 - **Robust Rate Limiting:** Prevent abuse with Redis-backed rate limiting per IP/user.
 - **High Performance Redirection:** Caching layer via Redis for ultra-fast link resolutions.
-- **Monitoring & Observability:** Prometheus and Grafana for real-time application metrics.
 - **API Documentation:** Interactive Swagger UI documentation via OpenAPI 3.
 - **Modern UI:** Responsive, accessible, and stunning frontend built with React, Vite, and Mantine.
 - **Production Ready:** Database migrations with Flyway, Dockerized infrastructure, and PostgreSQL.
 
 ## 🏗️ Architecture
 
+```
+                       ┌────────────────────────┐
+                       │   Client / Web Browser │
+                       └───────────┬────────────┘
+                                   │
+                                   ▼
+                       ┌────────────────────────┐
+                       │  Nginx / Ingress LB    │
+                       └───────────┬────────────┘
+                                   │
+                                   ▼
+                   ┌────────────────────────────────┐
+                   │  Kubernetes Service / HPA      │
+                   │  (Scales 3 - 15 Backend Pods)   │
+                   └───────────────┬────────────────┘
+                                   │
+         ┌─────────────────────────┴─────────────────────────┐
+         ▼                                                   ▼
+┌─────────────────┐                                 ┌─────────────────┐
+│ Spring Boot Pod │                                 │ Spring Boot Pod │ ...
+└────────┬────────┘                                 └────────┬────────┘
+         │                                                   │
+         ├─────────────────────────┬─────────────────────────┤
+         ▼                         ▼                         ▼
+┌───────────────────┐    ┌───────────────────┐
+│ PostgreSQL DB     │    │ Valkey (Redis)    │
+│ (Persistent Data) │    │ (Caching & Limits)│
+└───────────────────┘    └───────────────────┘
+```
+
 ## 🛠️ Tech Stack
 
 ### Backend
 - **Framework:** Java 21 & Spring Boot 3
 - **Database:** PostgreSQL (with Flyway Migrations)
-- **Caching & Rate Limiting:** Redis
+- **Caching & Rate Limiting:** Valkey (High-performance Redis fork)
 - **Security:** Spring Security & JWT
 - **Analytics:** MaxMind GeoIP2, UA-Parser
 
@@ -46,19 +73,22 @@ An advanced, full-stack URL shortening platform built for performance, security,
 - **Framework:** React 19 & Vite
 - **Language:** TypeScript
 - **State & Data Fetching:** React Query, Axios
-- **UI Components:** Mantine, Tabler Icons
+- **Styling:** Custom Vanilla CSS with dynamic Skeleton Loaders (No heavy component libraries for maximum performance)
 - **Forms & Validation:** React Hook Form, Zod
 
-### Infrastructure & Monitoring
-- **Containerization:** Docker & Docker Compose
-- **Observability:** Prometheus & Grafana
+### Infrastructure & Scaling
+- **Containerization:** Docker
+- **Orchestration:** Kubernetes (with Horizontal Pod Autoscaling manifests)
+- **Load Balancing:** Kubernetes Ingress (Nginx)
+- **Load Testing:** k6 (Tested up to 10,000+ RPS)
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 - Java 21
 - Node.js 18+
-- Docker & Docker Compose
+- Docker & Kubernetes (e.g., Minikube, Docker Desktop with K8s enabled)
+- `kubectl` CLI
 
 ### 1. Clone the repository
 ```bash
@@ -70,41 +100,69 @@ cd url_shortner
 Copy `.env.example` to `.env` in the root directory (if available) or create a `.env` file with your database and JWT secrets.
 
 ### 3. Start the Entire Platform
-The entire platform is fully containerized, including a horizontally scaled backend (3 instances behind Nginx), a React frontend, PostgreSQL, Valkey (Redis), Prometheus, and Grafana.
+The entire platform is designed to run on a Kubernetes cluster, including a horizontally scaled backend (via HPA), a React frontend, PostgreSQL, and Valkey (Redis).
 
-Simply run:
+Ensure you have a Kubernetes cluster running (e.g., Minikube) and `kubectl` configured. If using Minikube, enable the Ingress and Metrics Server addons:
 ```bash
-docker compose up -d --build
+minikube addons enable ingress
+minikube addons enable metrics-server
+```
+
+Apply the Kubernetes manifests:
+```bash
+kubectl apply -f k8s/
 ```
 
 ### 4. Access the Application
-- **Frontend (Web App):** [http://localhost:3000](http://localhost:3000)
-- **Backend APIs / Nginx Load Balancer:** [http://localhost:8080](http://localhost:8080)
-- **Swagger UI:** [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
+If you have an Ingress controller running, you can access the platform at:
+- **Frontend (Web App):** [http://localhost](http://localhost) (or via your Ingress IP)
+- **Backend APIs:** [http://localhost/api](http://localhost/api)
+- **Swagger UI:** [http://localhost/swagger-ui/index.html](http://localhost/swagger-ui/index.html)
+
+Alternatively, if using NodePorts on Minikube:
+- **Frontend:** `minikube service url-shortener-frontend-service --url`
+- **Backend API:** `minikube service url-shortener-backend-service --url`
 
 ## 📂 Project Structure
 - `/backend`: Spring Boot application containing all business logic, REST APIs, and database migrations.
 - `/frontend`: React SPA with routing and UI components.
-- `docker-compose.yml`: Docker Compose configuration for databases and monitoring services.
+- `/k8s`: Production Kubernetes deployment manifests (Deployments, Services, ConfigMaps, Secrets, Ingress, and HPA).
+- `/load_tests`: k6 performance testing scripts (Spike test & Soak test).
+- `load_test.js`: k6 standard load test script.
 
 ## 📖 API Documentation (Swagger)
 Once the backend is running, you can explore and test the REST APIs using the interactive Swagger UI interface provided by OpenAPI:
 - **Swagger UI:** [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
 - **API Docs (JSON):** [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
 
-## 📊 Monitoring (Grafana & Prometheus)
-The application exposes metrics via Spring Boot Actuator which are scraped by Prometheus and automatically visualized in a pre-configured Grafana instance.
-1. Run `docker compose up -d`
-2. Navigate to Grafana at [http://localhost:3001](http://localhost:3001).
-3. **Login credentials:** `admin` / `admin`.
-4. Navigate to **Dashboards** -> **Spring Boot Default** folder to view the live JVM Micrometer dashboard. (No manual importing required!)
 
 ## 🧪 Testing
+
+### Backend Unit Tests
 The backend is equipped with unit tests built using JUnit 5 and Mockito. To run the test suite:
 ```bash
 cd backend
 ./mvnw test
 ```
+
+### Performance & Reliability Testing (k6)
+The project includes three specialized performance test suites in `k6` to test horizontal scalability, traffic bursts, and endurance:
+
+1. **Standard Load Test** (staged throughput ramping):
+   ```bash
+   k6 run load_tests/load_test.js
+   ```
+2. **Spike Test** (sudden 4,000 VU traffic bursts & HPA recovery):
+   ```bash
+   k6 run load_tests/spike_test.js
+   ```
+3. **Soak / Endurance Test** (30+ minute steady high throughput):
+   ```bash
+   k6 run load_tests/soak_test.js
+   ```
+
+*Note: Pass `API_URL` when testing against Kubernetes (e.g., `API_URL=http://$(minikube ip):30080 k6 run load_test.js`).*
+
 
 ## 📜 License
 This project is licensed under the MIT License.

@@ -12,7 +12,7 @@ spring:
 
   datasource:
     hikari:
-      maximum-pool-size: 60
+      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:15}
       minimum-idle: 5
       connection-timeout: 3000
       idle-timeout: 600000
@@ -59,3 +59,9 @@ management:
   endpoint:
     health:
       show-details: always
+
+jwt:
+  secret: ${JWT_SECRET:6af69b2bbd4f4eecb14af72dfad91e0c71c73f8271dc3db889d9b2d0d8dffb86}
+  access-token-expiration: ${JWT_EXPIRATION:900000}
+  refresh-token-expiration: ${JWT_REFRESH_EXPIRATION:2592000000}
+

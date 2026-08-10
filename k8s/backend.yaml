@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: url-shortener-backend
+  namespace: default
+  labels:
+    app: url-shortener-backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: url-shortener-backend
+  template:
+    metadata:
+      labels:
+        app: url-shortener-backend
+    spec:
+      containers:
+        - name: backend
+          image: url-shortener-backend:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: SPRING_PROFILES_ACTIVE
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:postgresql://postgres:5432/url_shortener"
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secret
+                  key: POSTGRES_USER
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secret
+                  key: POSTGRES_PASSWORD
+            - name: SPRING_DATA_REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: REDIS_HOST
+            - name: HIKARI_MAX_POOL_SIZE
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: HIKARI_MAX_POOL_SIZE
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secret
+                  key: JWT_SECRET
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 90
+            periodSeconds: 10
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 70
+            periodSeconds: 5
+            failureThreshold: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: url-shortener-backend-service
+  namespace: default
+  labels:
+    app: url-shortener-backend
+spec:
+  type: NodePort
+  ports:
+    - port: 8080
+      targetPort: 8080
+      nodePort: 30080
+      name: http
+  selector:
+    app: url-shortener-backend

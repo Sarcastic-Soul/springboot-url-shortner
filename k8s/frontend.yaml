@@ -1,0 +1,44 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: url-shortener-frontend
+  namespace: default
+  labels:
+    app: url-shortener-frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: url-shortener-frontend
+  template:
+    metadata:
+      labels:
+        app: url-shortener-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: url-shortener-frontend:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: url-shortener-frontend-service
+  namespace: default
+  labels:
+    app: url-shortener-frontend
+spec:
+  type: NodePort
+  ports:
+    - port: 3000
+      targetPort: 3000
+      nodePort: 30000
+      name: http
+  selector:
+    app: url-shortener-frontend

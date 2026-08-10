@@ -1,9 +1,15 @@
 # 📊 Automated k6 Performance Test Results
 
-This file is automatically updated by the GitHub Actions workflow ([`.github/workflows/k6-load-testing.yml`](../.github/workflows/k6-load-testing.yml)) whenever performance tests execute against the KinD cluster.
+> **Last Automated Run:** `2026-08-10T20:34:35.332Z`  
+> **Git Commit:** `48b5c53bd366aed9b5057325338343fa34262444`  
+> **Branch:** `main`  
 
----
+---  
 
-## 🚀 Latest Benchmark Summary
+## 🚀 Executive Benchmark Summary
 
-*Run details will be populated here automatically upon workflow completion.*
+| Test Suite | Total Requests | Throughput (RPS) | Success Rate | Avg Latency | p95 Latency | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Standard Load Test** | Parsing Error | - | - | - | - | ❌ Error |
+| **Spike Burst Test** | Parsing Error | - | - | - | - | ❌ Error |
+| **Soak / Endurance Test** | Parsing Error | - | - | - | - | ❌ Error |

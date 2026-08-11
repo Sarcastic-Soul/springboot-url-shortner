@@ -71,11 +71,11 @@ Performance tests are integrated directly into the CI/CD pipeline ([`.github/wor
 
 ### 📊 Benchmark Results (GitHub Actions KinD Cluster)
 
-| Test Suite | Total Requests | Throughput (RPS) | Pass / Defense Rate | Avg Latency | p95 Latency | System Reaction |
+| Test Suite | Total Requests | Throughput (RPS) | Success Rate | Avg Latency | p95 Latency | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Soak / Endurance Test** | **688,214** | **1,636.7 req/s** | **99.99%** | **272.1 ms** | **906.7 ms** | ✅ PASSED (Sub-300ms) |
-| **Standard Load Test** | **1,428,991** | **3,966.7 req/s** | **99.8% (429 Blocked)** | **450.1 ms** | **2,655.0 ms** | 🛡️ RATE LIMITED (Valkey) |
-| **Spike Burst Test** | **96,836** | **318.8 req/s** | **79.78%** | **1,653.3 ms** | **8,020.4 ms** | ⚡ HPA AUTOSCALED |
+| **Soak / Endurance Test** | **694,163** | **1,651.0 req/s** | **99.99%** | **267.8 ms** | **944.3 ms** | ✅ PASSED (Sub-300ms) |
+| **Spike Burst Test** | **153,067** | **511.7 req/s** | **87.17%** | **964.5 ms** | **4,381.3 ms** | ⚡ HPA AUTOSCALED |
+| **Standard Load Test** | **1,198,780** | **3,326.9 req/s** | **6.73%** | **450.1 ms** | **2,654.9 ms** | ⚠️ DB POOL BOUND (15 Connections) |
 
 📊 **Detailed Automated Report:** Benchmark history is tracked in [`load_tests/PERFORMANCE_RESULTS.md`](./load_tests/PERFORMANCE_RESULTS.md).
 

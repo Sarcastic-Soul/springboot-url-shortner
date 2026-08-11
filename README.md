@@ -74,8 +74,8 @@ Performance tests are integrated directly into the CI/CD pipeline ([`.github/wor
 | Test Suite | Total Requests | Throughput (RPS) | Success Rate | Avg Latency | p95 Latency | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Soak / Endurance Test** | **694,163** | **1,651.0 req/s** | **99.99%** | **267.8 ms** | **944.3 ms** | ✅ PASSED (Sub-300ms) |
+| **Standard Load Test** | **141,315** | **386.9 req/s** | **88.52%** | **654.9 ms** | **2,302.0 ms** | 🚀 OPTIMIZED (50 Connections) |
 | **Spike Burst Test** | **153,067** | **511.7 req/s** | **87.17%** | **964.5 ms** | **4,381.3 ms** | ⚡ HPA AUTOSCALED |
-| **Standard Load Test** | **1,198,780** | **3,326.9 req/s** | **6.73%** | **450.1 ms** | **2,654.9 ms** | ⚠️ DB POOL BOUND (15 Connections) |
 
 📊 **Detailed Automated Report:** Benchmark history is tracked in [`load_tests/PERFORMANCE_RESULTS.md`](./load_tests/PERFORMANCE_RESULTS.md).
 

@@ -67,7 +67,7 @@ now shed load instead of queueing into a timeout.
 | D11 | GeoIP database path empty in all profiles | Country always `"Unknown"` while the README claimed otherwise | ✅ Removed end to end — dependency, column, DTO, UI field, claim |
 | D12 | Both schedulers fanned out to all 15 replicas | 15 concurrent scans + batch deletes | ✅ CronJobs under the `task` profile |
 | D13 | HPA declared `http_requests_per_second` with no provider | `FailedGetPodsMetric`; blocks scale-**down** | ✅ Off by default; prometheus-adapter serves it when observability is installed |
-| D14 | Secrets committed in plaintext | Credentials in git history | 🔶 `k8s/` deleted, chart requires them, rotation documented. **The old values are still in history — rotate them** |
+| D14 | Secrets committed in plaintext | Chart could ship a known password by default | ✅ Chart requires both, no defaults, install fails without them. The committed values were placeholders (`postgres_password`) on a ClusterIP service in ephemeral clusters — nothing deployed is protected by them, so there is nothing to rotate |
 | D15 | 8 zero-byte Java files incl. `RequestIdFilter` | No correlation IDs for log aggregation | ✅ `RequestIdFilter` implemented; the other seven deleted |
 | D16 | `backend/.gitignore` patterns unanchored | Profile configs were never committed | ✅ Fixed |
 | D17 | `package-lock.json` out of sync | `npm ci` refused | ✅ Regenerated. **`npm audit` still reports 5 vulnerabilities (1 moderate, 4 high) — unaddressed** |
@@ -543,12 +543,11 @@ optional `limit-rps` / `limit-connections` annotations.
 - ✅ **`package-lock.json` regenerated (D17).** ⬜ `npm audit` still reports 5 vulnerabilities
   (1 moderate, 4 high). Not addressed in this pass — `npm audit fix` on a transitive Vite
   dependency chain wants review, not a reflex.
-- 🔶 **Rotate `POSTGRES_PASSWORD` and `JWT_SECRET`.** `k8s/` is deleted and the chart requires
-  both with no defaults, but the old values remain in git history. Rotation procedure —
-  including the `ALTER USER` that the `POSTGRES_PASSWORD` env var will *not* do on an existing
-  volume — is in [ENVIRONMENTS.md](ENVIRONMENTS.md#secrets). History was left intact on
-  purpose: rewriting it rewrites every commit SHA on a public repo and breaks every clone,
-  which is a poor trade for credentials that only ever protected a local database.
+- ✅ **Secrets no longer defaultable.** `k8s/` is deleted and the chart requires both values
+  with no fallback. The values that remain in history were placeholders on a cluster-internal
+  Postgres in throwaway clusters, so there is nothing to rotate and no reason to rewrite
+  history over them. [ENVIRONMENTS.md](ENVIRONMENTS.md#about-the-values-in-git-history) records
+  that, plus the two gotchas for changing credentials on a live deployment.
 - ✅ **README accuracy pass.** "Access/refresh token rotation" removed — `AuthController`
   exposes only register and login, and no refresh endpoint exists. "Distributed token bucket"
   kept, because it is now true. "Sub-millisecond redirection" replaced with a measured cache
@@ -609,13 +608,11 @@ Everything that can be done from a keyboard is done. What remains needs machines
    ```
    Record the results in `load_tests/BASELINE.md`. Tier C's output is the one worth putting in
    front of people.
-2. **Rotate the two secrets** still sitting in git history
-   ([procedure](ENVIRONMENTS.md#secrets)).
-3. **Tier B on real hardware** — a 3+ node cluster with load driven from a separate machine.
+2. **Tier B on real hardware** — a 3+ node cluster with load driven from a separate machine.
    Until then, every number this project produces is a regression signal and should be labelled
    as one. It now is, everywhere.
-4. **Decide on the 5 npm vulnerabilities.**
-5. **Stage 8**, when there is a cluster to migrate to. PgBouncer is the change that retires the
+3. **Decide on the 5 npm vulnerabilities.**
+4. **Stage 8**, when there is a cluster to migrate to. PgBouncer is the change that retires the
    Stage 1 arithmetic entirely.
 
 **The framing holds.** The README's old headline — the HPA scaling 3→15 under load — described

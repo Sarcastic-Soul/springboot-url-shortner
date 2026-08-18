@@ -176,34 +176,42 @@ else owns the budget — e.g. PgBouncer (plan.md Stage 8).
 The chart ships **no** credential defaults. A missing `secrets.postgresPassword` or
 `secrets.jwtSecret` fails `helm install` rather than silently deploying a known password.
 
-### Rotate the old ones
+### About the values in git history
 
-`k8s/secret.yaml` used to carry `POSTGRES_PASSWORD` and `JWT_SECRET` in plaintext. That
-directory is gone, but **the values remain in git history**, so treat both as compromised:
+`k8s/secret.yaml` used to carry `POSTGRES_PASSWORD` and `JWT_SECRET` in plaintext, and those
+values are still in history. They were:
+
+```
+POSTGRES_PASSWORD: "postgres_password"
+JWT_SECRET: "mySecretKeyForJWTAuthTokenGenerationMustBeLongEnough"
+```
+
+Placeholders, on a `ClusterIP` Postgres that was never reachable outside the cluster, in KinD
+and Minikube clusters destroyed after every run. **There is nothing to rotate** — no deployed
+system is protected by either string. Rewriting history to purge them would break every clone
+to remove two values that unlock nothing.
+
+What mattered was that the chart could hand a real deployment a known password by default. It
+can't: `secrets.postgresPassword` and `secrets.jwtSecret` have no defaults and a missing one
+fails the install.
+
+If you do deploy for real, generate fresh values and keep them out of the repo:
 
 ```bash
-# New values
 export POSTGRES_PASSWORD="$(openssl rand -base64 32)"
 export JWT_SECRET="$(openssl rand -base64 48)"      # >= 32 bytes for HS256
-
 make prod-deploy
 ```
 
-Rotating `JWT_SECRET` invalidates every issued access token, so all users are signed out at
-once. Access tokens live 15 minutes; rotating during a quiet period keeps that cheap.
-
-Rotating `POSTGRES_PASSWORD` on an existing volume needs the database updated too — the
-`POSTGRES_PASSWORD` environment variable only takes effect on first initialisation:
+Two things to know if you ever change them on a *running* deployment: rotating `JWT_SECRET`
+invalidates every issued access token, so everyone is signed out at once (they live 15 minutes,
+so a quiet period makes this cheap), and `POSTGRES_PASSWORD` only takes effect on first
+initialisation — an existing volume needs the database told too:
 
 ```bash
 kubectl exec urlshortener-postgres-0 -- \
   psql -U postgres -c "ALTER USER postgres WITH PASSWORD '$POSTGRES_PASSWORD';"
 ```
-
-History was left intact deliberately: rewriting it rewrites every commit SHA on a public repo
-and breaks every clone, which is a poor trade for credentials that only ever protected a
-self-hosted database on a local cluster. If this ever holds a real credential, rotate first and
-rewrite second.
 
 ---
 

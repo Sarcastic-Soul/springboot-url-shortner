@@ -105,6 +105,28 @@ jobs:
             -o jsonpath='HPA replicas          : {.spec.minReplicas}-{.spec.maxReplicas}{"\n"}' >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
+      - name: Why the deploy failed
+        if: failure()
+        run: |
+          # A `helm --wait` timeout says only "context deadline exceeded". The reason is always
+          # in the pod state and the events -- ErrImageNeverPull, Pending, CrashLoopBackOff --
+          # and without this the next debugging step is another ten-minute run.
+          echo "::group::pods"
+          kubectl get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::describe"
+          kubectl describe pods || true
+          echo "::endgroup::"
+          echo "::group::events"
+          kubectl get events --sort-by=.lastTimestamp | tail -50 || true
+          echo "::endgroup::"
+          echo "::group::logs"
+          for c in backend postgres valkey frontend; do
+            echo "--- $c ---"
+            kubectl logs -l "app.kubernetes.io/component=$c" --tail=50 --prefix 2>&1 | tail -50 || true
+          done
+          echo "::endgroup::"
+
       - name: Record pre-test HPA state
         run: kubectl get hpa urlshortener-backend -o wide
 

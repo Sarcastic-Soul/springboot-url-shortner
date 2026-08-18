@@ -7,6 +7,11 @@ fullnameOverride: ""
 
 image:
   registry: ""              # e.g. ghcr.io/sarcastic-soul  (empty = local images)
+  # Applies to the images THIS repo builds -- backend and frontend -- and nothing
+  # else. The test environments set it to Never so a `kind load`ed image is used
+  # instead of a same-named stranger from Docker Hub. Upstream images (postgres,
+  # valkey) are never side-loaded, so they keep their own policy below; inheriting
+  # Never would leave them as ErrImageNeverPull with no image on the node.
   pullPolicy: IfNotPresent
 
 backend:
@@ -66,6 +71,8 @@ frontend:
 postgres:
   enabled: true
   image: postgres:17-alpine
+  # Pulled from a registry, never side-loaded -- see image.pullPolicy above.
+  imagePullPolicy: IfNotPresent
   database: url_shortener
   maxConnections: 200
   # Held back for superuser/monitoring/migration connections.
@@ -85,6 +92,8 @@ postgres:
 valkey:
   enabled: true
   image: valkey/valkey:8-alpine
+  # Pulled from a registry, never side-loaded -- see image.pullPolicy above.
+  imagePullPolicy: IfNotPresent
   # Must sit meaningfully below resources.limits.memory, or the kernel
   # OOM-kills the container before Valkey ever applies its own policy.
   maxmemory: 400mb

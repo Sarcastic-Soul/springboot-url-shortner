@@ -102,6 +102,28 @@ jobs:
             --set backend.hpa.minReplicas=2 \
             --wait --timeout 10m
 
+      - name: Why the deploy failed
+        if: failure()
+        run: |
+          # A `helm --wait` timeout says only "context deadline exceeded". The reason is always
+          # in the pod state and the events -- ErrImageNeverPull, Pending, CrashLoopBackOff --
+          # and without this the next debugging step is another ten-minute run.
+          echo "::group::pods"
+          kubectl get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::describe"
+          kubectl describe pods || true
+          echo "::endgroup::"
+          echo "::group::events"
+          kubectl get events --sort-by=.lastTimestamp | tail -50 || true
+          echo "::endgroup::"
+          echo "::group::logs"
+          for c in backend postgres valkey frontend; do
+            echo "--- $c ---"
+            kubectl logs -l "app.kubernetes.io/component=$c" --tail=50 --prefix 2>&1 | tail -50 || true
+          done
+          echo "::endgroup::"
+
       - name: Verify the schema was migrated
         run: |
           # On a fresh install the migrate Job does not run -- it is a pre-upgrade hook, because
@@ -136,10 +158,12 @@ jobs:
         run: |
           echo "### Tier A gate" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          # tee, not >>: sending this only to the step summary means a failure is invisible
+          # in the log everyone actually reads.
           kubectl exec urlshortener-postgres-0 -- psql -U postgres -d url_shortener -t \
             -c "SELECT count(*) AS connections, (SELECT setting FROM pg_settings WHERE name='max_connections') AS max FROM pg_stat_activity;" \
-            >> $GITHUB_STEP_SUMMARY 2>&1 || true
-          kubectl get hpa urlshortener-backend -o wide >> $GITHUB_STEP_SUMMARY 2>&1 || true
+            2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
+          kubectl get hpa urlshortener-backend -o wide 2>&1 | tee -a $GITHUB_STEP_SUMMARY || true
           echo '```' >> $GITHUB_STEP_SUMMARY
 
           # Hard failure. Pool exhaustion is the specific defect this gate exists to catch, and

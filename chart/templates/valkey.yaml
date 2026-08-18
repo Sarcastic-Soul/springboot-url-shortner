@@ -41,7 +41,7 @@ spec:
       containers:
         - name: valkey
           image: {{ .Values.valkey.image }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.valkey.imagePullPolicy | default .Values.image.pullPolicy }}
           command: ["valkey-server", "/etc/valkey/valkey.conf"]
           ports:
             - containerPort: 6379

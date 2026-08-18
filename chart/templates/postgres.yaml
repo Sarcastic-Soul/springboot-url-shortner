@@ -39,7 +39,7 @@ spec:
       containers:
         - name: postgres
           image: {{ .Values.postgres.image }}
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          imagePullPolicy: {{ .Values.postgres.imagePullPolicy | default .Values.image.pullPolicy }}
           args:
             - postgres
             - -c

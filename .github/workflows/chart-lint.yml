@@ -92,6 +92,18 @@ jobs:
             fi
           done
 
+      - name: Only side-loaded images may set pullPolicy Never
+        run: |
+          set -euo pipefail
+          for env in dev loadtest prod; do
+            helm template urlshortener ./chart -f "chart/values-$env.yaml" \
+              --set secrets.postgresUser=ci \
+              --set secrets.postgresPassword=ci \
+              --set secrets.jwtSecret=ci \
+              | python3 chart/ci/check_pull_policy.py
+            echo "$env: ok"
+          done
+
   observability:
     runs-on: ubuntu-latest
     steps:

@@ -63,6 +63,28 @@ jobs:
             --set config.trustProxyHeaders=false \
             --wait --timeout 10m
 
+      - name: Why the deploy failed
+        if: failure()
+        run: |
+          # A `helm --wait` timeout says only "context deadline exceeded". The reason is always
+          # in the pod state and the events -- ErrImageNeverPull, Pending, CrashLoopBackOff --
+          # and without this the next debugging step is another ten-minute run.
+          echo "::group::pods"
+          kubectl get pods -o wide || true
+          echo "::endgroup::"
+          echo "::group::describe"
+          kubectl describe pods || true
+          echo "::endgroup::"
+          echo "::group::events"
+          kubectl get events --sort-by=.lastTimestamp | tail -50 || true
+          echo "::endgroup::"
+          echo "::group::logs"
+          for c in backend postgres valkey frontend; do
+            echo "--- $c ---"
+            kubectl logs -l "app.kubernetes.io/component=$c" --tail=50 --prefix 2>&1 | tail -50 || true
+          done
+          echo "::endgroup::"
+
       - uses: grafana/setup-k6-action@v1
 
       - name: Run the resilience suite

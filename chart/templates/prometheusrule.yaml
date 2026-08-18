@@ -1,0 +1,104 @@
+{{- if .Values.metrics.prometheusRule.enabled }}
+{{- $r := .Values.metrics.prometheusRule }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "urlshortener.fullname" . }}
+  labels:
+    {{- include "urlshortener.labels" . | nindent 4 }}
+    {{- with $r.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: urlshortener
+      rules:
+        # The failure mode that produced the 88% success rate: pods waiting on a pool that
+        # cannot grow, then timing out after ten seconds. Pending connections at all means the
+        # pool is the binding constraint.
+        - alert: HikariPoolSaturated
+          expr: sum(hikaricp_connections_pending{application="url-shortener"}) > 0
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: Connection pool has queued waiters
+            description: >-
+              Requests are waiting for a database connection. Either the workload has outgrown
+              (postgres.maxConnections - reserved) / hpa.maxReplicas, or a query is holding
+              connections longer than it should.
+
+        - alert: RedirectLatencyHigh
+          expr: >-
+            histogram_quantile(0.95, sum by (le) (rate(
+              http_server_requests_seconds_bucket{application="url-shortener",uri="/{shortCode}"}[5m]
+            ))) > {{ $r.redirectP95Seconds }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Redirect p95 above {{ $r.redirectP95Seconds }}s
+            description: The redirect path is supposed to be cache-dominated. Check the cache hit ratio first.
+
+        # Clicks are enqueued to Valkey and drained in batches. A stream that only grows means
+        # the consumer has stopped keeping up, and the backlog is bounded by MAXLEN -- past
+        # which clicks are silently discarded.
+        - alert: AnalyticsStreamBacklog
+          expr: max(analytics_stream_length{application="url-shortener"}) > {{ $r.streamLength }}
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: Analytics stream is backing up
+            description: Consumers are draining slower than redirects are producing.
+
+        - alert: AnalyticsMessagesStranded
+          expr: max(analytics_stream_pending{application="url-shortener"}) > 1000
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: Messages delivered but never acknowledged
+            description: >-
+              Entries are sitting in the pending list beyond the reclaim window. Either the
+              reclaim pass is failing or a consumer is dying mid-batch repeatedly.
+
+        - alert: ValkeyMemoryHigh
+          expr: >-
+            100 * max(container_memory_working_set_bytes{container="valkey"})
+              / max(container_spec_memory_limit_bytes{container="valkey"}) > {{ $r.valkeyMemoryPercent }}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Valkey approaching its memory limit
+            description: >-
+              volatile-lru protects the click stream from eviction, but only cache keys can be
+              evicted -- if the stream itself is the growth, eviction cannot save it.
+
+        # An HPA whose metric cannot be served refuses to scale DOWN, so this fails quietly in
+        # the direction that costs money.
+        - alert: HPAScalingInactive
+          expr: >-
+            kube_horizontalpodautoscaler_status_condition{
+              horizontalpodautoscaler="{{ include "urlshortener.fullname" . }}-backend",
+              condition="ScalingActive", status="false"
+            } == 1
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: HPA cannot read its metrics
+            description: Usually a custom metric with no provider. Check prometheus-adapter.
+
+        - alert: LoadSheddingSustained
+          expr: >-
+            sum(rate(http_server_requests_seconds_count{application="url-shortener",status="503"}[5m]))
+              / sum(rate(http_server_requests_seconds_count{application="url-shortener"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: Over 5% of requests are being shed
+            description: The database bulkhead is rejecting sustained traffic. This is capacity, not a blip.
+{{- end }}

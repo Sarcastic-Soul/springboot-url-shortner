@@ -1,0 +1,27 @@
+{{ .Chart.Name }} {{ .Chart.Version }} deployed as release "{{ .Release.Name }}".
+
+  Profile            : {{ .Values.config.springProfile }}
+  Backend replicas   : {{ if .Values.backend.hpa.enabled }}HPA {{ .Values.backend.hpa.minReplicas }}-{{ .Values.backend.hpa.maxReplicas }}{{ else }}{{ .Values.backend.replicas }} (fixed){{ end }}
+  HikariCP pool/pod  : {{ include "urlshortener.hikariPoolSize" . }}
+  Postgres max conns : {{ .Values.postgres.maxConnections }} ({{ .Values.postgres.reservedConnections }} reserved)
+  Peak DB demand     : {{ mul (int (include "urlshortener.hikariPoolSize" .)) (int (ternary .Values.backend.hpa.maxReplicas .Values.backend.replicas .Values.backend.hpa.enabled)) }} connections
+  Rate limiting      : {{ if .Values.config.rateLimitEnabled }}ENABLED ({{ .Values.config.rateLimitAnonCapacity }}/min anon, {{ .Values.config.rateLimitAuthCapacity }}/min auth){{ else }}DISABLED{{ end }}
+  Ingress edge limit : {{ if .Values.ingress.rateLimit.enabled }}{{ .Values.ingress.rateLimit.requestsPerSecond }} rps / {{ .Values.ingress.rateLimit.connections }} conns per IP{{ else }}off{{ end }}
+
+Watch the rollout:
+  kubectl rollout status deployment/{{ include "urlshortener.fullname" . }}-backend
+
+{{- if eq .Values.backend.service.type "NodePort" }}
+
+Reach the API (NodePort):
+  http://localhost:{{ .Values.backend.service.nodePort }}
+{{- else }}
+
+Reach the API locally:
+  kubectl port-forward svc/{{ include "urlshortener.fullname" . }}-backend 8080:{{ .Values.backend.service.port }}
+{{- end }}
+
+Verify the connection budget is actually respected at peak load:
+  kubectl exec -it {{ include "urlshortener.fullname" . }}-postgres-0 -- \
+    psql -U {{ .Values.secrets.postgresUser }} -d {{ .Values.postgres.database }} \
+    -c 'SELECT count(*) FROM pg_stat_activity;'

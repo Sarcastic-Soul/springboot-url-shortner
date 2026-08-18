@@ -1,0 +1,103 @@
+# PROD overlay.
+#
+#   helm upgrade --install urlshortener ./chart \
+#     -f chart/values-prod.yaml \
+#     --set secrets.postgresPassword="$POSTGRES_PASSWORD" \
+#     --set secrets.jwtSecret="$JWT_SECRET" \
+#     --wait --timeout 10m
+#
+# Secrets are intentionally EMPTY here. The chart fails the install if they
+# are missing, so a real password can never be accidentally inherited from
+# a committed default. Supply them via --set, a sealed secret, or an
+# untracked values-prod.local.yaml.
+
+image:
+  registry: ""              # set to your registry, e.g. ghcr.io/<user>
+  pullPolicy: IfNotPresent
+
+backend:
+  image:
+    tag: latest             # pin to a git SHA in a real pipeline
+  replicas: 3
+  service:
+    type: ClusterIP
+  hpa:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 15
+    targetCPUUtilizationPercentage: 65
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+frontend:
+  replicas: 2
+  service:
+    type: ClusterIP
+
+postgres:
+  # Self-hosted Postgres with a single replica and a ReadWriteOnce volume is
+  # a hard ceiling on the "distributed" claim. Move to managed Postgres +
+  # PgBouncer (plan.md Stage 8) when leaving single-node.
+  enabled: true
+  maxConnections: 200
+  reservedConnections: 20
+  persistence:
+    size: 20Gi
+  resources:
+    requests: { cpu: "1", memory: 2Gi }
+    limits:   { cpu: "2", memory: 4Gi }
+
+valkey:
+  maxmemory: 800mb
+  persistence:
+    size: 5Gi
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits:   { cpu: "1",  memory: 1Gi }
+
+config:
+  # Auto-derived: (200 - 20) / 15 = 12 per pod. Bulkhead auto-derives to 24.
+  hikariMaxPoolSize: ""
+  rateLimitEnabled: true
+  rateLimitAnonCapacity: 20
+  rateLimitAuthCapacity: 200
+  # Safe here ONLY because ingress.enabled is true and the ingress overwrites the header.
+  # If you expose the backend Service directly, set this back to false or per-IP limiting
+  # becomes bypassable with a single header.
+  trustProxyHeaders: true
+  analytics:
+    retentionDays: 90
+  logLevelRoot: WARN
+  logLevelApp: INFO
+  appBaseUrl: ""            # set to your public URL, e.g. https://trimurl.app
+
+metrics:
+  # Both require the Prometheus Operator CRDs. Install chart/observability first, then:
+  #   helm upgrade ... --set metrics.serviceMonitor.enabled=true \
+  #                    --set metrics.prometheusRule.enabled=true
+  # (`make obs-deploy` does both.) Left off so a plain `make prod-deploy` cannot fail on a
+  # CRD that is not there yet.
+  serviceMonitor:
+    enabled: false
+    labels:
+      release: observability
+  prometheusRule:
+    enabled: false
+    labels:
+      release: observability
+
+secrets:
+  postgresUser: postgres
+  postgresPassword: ""      # REQUIRED -- install fails if unset
+  jwtSecret: ""             # REQUIRED -- install fails if unset
+  rateLimitBypassSecret: "" # MUST stay empty in production
+
+ingress:
+  enabled: true
+  className: nginx
+  host: ""                  # set to your domain for TLS/vhost routing
+  rateLimit:
+    enabled: true
+    requestsPerSecond: 100
+    connections: 50

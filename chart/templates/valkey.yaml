@@ -1,0 +1,87 @@
+{{- if .Values.valkey.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "urlshortener.fullname" . }}-valkey
+  labels:
+    {{- include "urlshortener.labels" . | nindent 4 }}
+    app.kubernetes.io/component: valkey
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: valkey
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: valkey
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "urlshortener.fullname" . }}-valkey
+  labels:
+    {{- include "urlshortener.labels" . | nindent 4 }}
+    app.kubernetes.io/component: valkey
+spec:
+  serviceName: {{ include "urlshortener.fullname" . }}-valkey
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: valkey
+  template:
+    metadata:
+      labels:
+        {{- include "urlshortener.labels" . | nindent 8 }}
+        app.kubernetes.io/component: valkey
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/valkey-configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: valkey
+          image: {{ .Values.valkey.image }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["valkey-server", "/etc/valkey/valkey.conf"]
+          ports:
+            - containerPort: 6379
+              name: valkey
+          resources:
+            {{- toYaml .Values.valkey.resources | nindent 12 }}
+          readinessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["valkey-cli", "ping"]
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          volumeMounts:
+            - name: config
+              mountPath: /etc/valkey
+            - name: valkey-data
+              mountPath: /data
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "urlshortener.fullname" . }}-valkey-config
+        {{- if not .Values.valkey.persistence.enabled }}
+        - name: valkey-data
+          emptyDir: {}
+        {{- end }}
+  {{- if .Values.valkey.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: valkey-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- if .Values.valkey.persistence.storageClass }}
+        storageClassName: {{ .Values.valkey.persistence.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.valkey.persistence.size }}
+  {{- end }}
+{{- end }}

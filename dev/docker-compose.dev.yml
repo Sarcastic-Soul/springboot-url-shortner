@@ -1,0 +1,56 @@
+# Local development dependencies ONLY.
+# The backend and frontend run on your host for fast iteration:
+#   cd backend  && ./mvnw spring-boot:run          (profile: local)
+#   cd frontend && npm run dev
+#
+#   docker compose -f dev/docker-compose.dev.yml up -d
+#   docker compose -f dev/docker-compose.dev.yml down -v     # reset all data
+
+name: urlshortener-dev
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: urlshortener-dev-postgres
+    command: ["postgres", "-c", "max_connections=100"]
+    environment:
+      POSTGRES_DB: url_shortener
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d url_shortener"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: urlshortener-dev-valkey
+    # volatile-lru: only evicts keys that carry a TTL. Redirect-cache and
+    # rate-limit keys have TTLs; the analytics stream does not, so it is
+    # never evicted. Mirrors the production policy.
+    command:
+      - valkey-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - volatile-lru
+      - --appendonly
+      - "yes"
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
+  valkey-data:

@@ -1,0 +1,49 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "urlshortener.fullname" . }}
+  labels:
+    {{- include "urlshortener.labels" . | nindent 4 }}
+  annotations:
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+    {{- if .Values.ingress.rateLimit.enabled }}
+    # Edge rate limiting: rejects floods at the proxy, before a request
+    # consumes a Tomcat thread, a Redis round-trip, or a DB connection.
+    nginx.ingress.kubernetes.io/limit-rps: {{ .Values.ingress.rateLimit.requestsPerSecond | quote }}
+    nginx.ingress.kubernetes.io/limit-connections: {{ .Values.ingress.rateLimit.connections | quote }}
+    {{- end }}
+    # Overwrite client-controlled forwarding headers so the application can
+    # trust them. Without this, per-IP rate limiting is bypassable by simply
+    # sending a random X-Forwarded-For on every request.
+    # Ignore whatever the client sent and write X-Forwarded-For from the real peer address.
+    # `compute-full-forwarded-for` would APPEND to the client's list instead, which is only
+    # safe if you read the rightmost entry -- ClientIpResolver does, but overwriting removes
+    # the question entirely.
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "false"
+    nginx.ingress.kubernetes.io/compute-full-forwarded-for: "false"
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - {{- if .Values.ingress.host }}
+      host: {{ .Values.ingress.host | quote }}
+      {{- end }}
+      http:
+        paths:
+          {{- range $path := list "/api" "/actuator" "/swagger-ui" "/v3/api-docs" }}
+          - path: {{ $path }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "urlshortener.fullname" $ }}-backend
+                port:
+                  number: {{ $.Values.backend.service.port }}
+          {{- end }}
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "urlshortener.fullname" . }}-frontend
+                port:
+                  number: {{ .Values.frontend.service.port }}
+{{- end }}

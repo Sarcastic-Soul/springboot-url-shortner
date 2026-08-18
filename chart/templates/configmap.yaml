@@ -1,0 +1,34 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "urlshortener.fullname" . }}-config
+  labels:
+    {{- include "urlshortener.labels" . | nindent 4 }}
+data:
+  SPRING_PROFILES_ACTIVE: {{ .Values.config.springProfile | quote }}
+  SPRING_DATA_REDIS_HOST: {{ include "urlshortener.fullname" . }}-valkey
+  SPRING_DATA_REDIS_PORT: "6379"
+  HIKARI_MAX_POOL_SIZE: {{ include "urlshortener.hikariPoolSize" . | quote }}
+  HIKARI_MIN_IDLE: {{ .Values.config.hikariMinIdle | quote }}
+  TOMCAT_MAX_THREADS: {{ .Values.config.tomcatMaxThreads | quote }}
+  TOMCAT_ACCEPT_COUNT: {{ .Values.config.tomcatAcceptCount | quote }}
+  DB_BULKHEAD_MAX_CONCURRENT: {{ include "urlshortener.dbBulkhead" . | quote }}
+  RATE_LIMIT_ENABLED: {{ .Values.config.rateLimitEnabled | quote }}
+  RATE_LIMIT_ANON_CAPACITY: {{ .Values.config.rateLimitAnonCapacity | quote }}
+  RATE_LIMIT_ANON_REFILL: {{ .Values.config.rateLimitAnonCapacity | quote }}
+  RATE_LIMIT_AUTH_CAPACITY: {{ .Values.config.rateLimitAuthCapacity | quote }}
+  RATE_LIMIT_AUTH_REFILL: {{ .Values.config.rateLimitAuthCapacity | quote }}
+  # Only ever true where the ingress is guaranteed to be in front AND overwrites the header.
+  # With this off, X-Forwarded-For is ignored entirely and the peer address is used.
+  TRUST_PROXY_HEADERS: {{ .Values.config.trustProxyHeaders | quote }}
+  REDIRECT_CACHE_TTL_SECONDS: {{ .Values.config.redirectCacheTtlSeconds | quote }}
+  ANALYTICS_STREAM_MAX_LENGTH: {{ .Values.config.analytics.streamMaxLength | quote }}
+  ANALYTICS_BATCH_SIZE: {{ .Values.config.analytics.batchSize | quote }}
+  ANALYTICS_RECLAIM_IDLE_MS: {{ .Values.config.analytics.reclaimIdleMs | quote }}
+  ANALYTICS_RETENTION_DAYS: {{ .Values.config.analytics.retentionDays | quote }}
+  # Maintenance runs as CronJobs below, not once per replica.
+  MAINTENANCE_IN_PROCESS: "false"
+  APP_BASE_URL: {{ .Values.config.appBaseUrl | quote }}
+  LOG_LEVEL_ROOT: {{ .Values.config.logLevelRoot | quote }}
+  LOG_LEVEL_APP: {{ .Values.config.logLevelApp | quote }}
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://{{ include "urlshortener.fullname" . }}-postgres:5432/{{ .Values.postgres.database }}"

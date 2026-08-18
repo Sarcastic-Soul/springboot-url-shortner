@@ -1,0 +1,104 @@
+# TEST overlay -- GitHub Actions + KinD, driving the k6 load/spike/soak suites.
+#
+#   helm upgrade --install urlshortener ./chart -f chart/values-loadtest.yaml --wait
+#
+# ---------------------------------------------------------------------------
+# WHAT THIS SHARES WITH PROD (deliberately, so benchmarks stay meaningful):
+#   - the same chart and the same templates
+#   - the same Spring profile (prod)
+#   - rate limiting ENABLED, same filter, same Redis round-trip per request
+#   - the same pool-size derivation, graceful shutdown, probes, and limits
+#
+# WHAT DIFFERS, AND WHY:
+#   - resource sizing and replica ceilings, because a GitHub Actions runner
+#     (~4 vCPU / 16 GB) hosts Postgres + Valkey + every backend JVM *and* k6
+#     itself. Numbers from this file describe the runner as much as the app.
+#   - the load generator presents a shared secret and is skipped by the limiter. Quotas stay
+#     at their production values (20/min anonymous, 200/min authenticated) -- the numbers
+#     under test are the real ones. Previously capacity was raised to 1,000,000, which meant
+#     the benchmark measured a configuration that is never deployed.
+#     Traffic WITHOUT the secret is still limited, which is what the resilience suite checks.
+#
+# Treat results from this file as a REGRESSION signal, not a capacity claim.
+# Real capacity numbers need a multi-node cluster with load driven from a
+# separate machine (plan.md Stage 7, Tier B).
+# ---------------------------------------------------------------------------
+
+image:
+  pullPolicy: Never         # images side-loaded via `kind load docker-image`
+
+backend:
+  replicas: 2
+  service:
+    type: NodePort
+    nodePort: 30080
+  resources:
+    requests: { cpu: 250m, memory: 384Mi }
+    limits:   { cpu: "1",  memory: 1Gi }
+  startupProbe:
+    failureThreshold: 40    # cold JVM on a contended runner
+    periodSeconds: 5
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8          # runner-bound; prod uses 15
+    targetCPUUtilizationPercentage: 60
+  podDisruptionBudget:
+    enabled: false          # nothing voluntarily drains during CI
+
+frontend:
+  replicas: 1
+  service:
+    type: NodePort
+    nodePort: 30000
+  resources:
+    requests: { cpu: 10m,  memory: 24Mi }
+    limits:   { cpu: 100m, memory: 64Mi }
+
+postgres:
+  maxConnections: 150
+  reservedConnections: 20
+  persistence:
+    enabled: false          # ephemeral; the cluster is destroyed after the run
+  resources:
+    requests: { cpu: 500m, memory: 1Gi }
+    limits:   { cpu: "1",  memory: 2Gi }
+
+valkey:
+  maxmemory: 300mb
+  persistence:
+    enabled: false
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits:   { cpu: 500m, memory: 384Mi }
+
+config:
+  # Auto-derived: (150 - 20) / 8 = 16 per pod. Bulkhead auto-derives to 32.
+  hikariMaxPoolSize: ""
+  rateLimitEnabled: true
+  rateLimitAnonCapacity: 20     # production values, not benchmark-flattering ones
+  rateLimitAuthCapacity: 200
+  # CI port-forwards the Service; there is no proxy in the path, so the header must not be
+  # trusted. This is also what lets the resilience suite prove spoofing does not work.
+  trustProxyHeaders: false
+  analytics:
+    retentionDays: 7
+  logLevelRoot: WARN
+  logLevelApp: WARN         # keep log volume off the hot path during benchmarks
+  appBaseUrl: http://localhost:8080
+
+maintenance:
+  jobs:
+    # Nothing to retain in a cluster that lives for twenty minutes, and a delete sweep during
+    # a benchmark is noise in the measurement.
+    clicks-retention:
+      enabled: false
+
+secrets:
+  postgresUser: postgres
+  postgresPassword: ci_password_ephemeral
+  jwtSecret: ci_jwt_secret_must_be_at_least_32_bytes_long_ok
+  rateLimitBypassSecret: ci_loadgen_bypass_secret
+
+ingress:
+  enabled: false            # CI port-forwards the backend Service directly

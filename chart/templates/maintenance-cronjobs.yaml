@@ -1,0 +1,56 @@
+{{/*
+Maintenance that must happen once, running once.
+
+Both of these were @Scheduled methods, which means every replica ran them: at fifteen pods
+that was fifteen concurrent scans and batch deletes over the same rows, competing for the
+connection pool with live traffic. As CronJobs they get one pod, one connection, and a
+concurrencyPolicy that refuses to start a second run before the first finishes.
+*/}}
+{{- range $name, $task := .Values.maintenance.jobs }}
+{{- if $task.enabled }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "urlshortener.fullname" $ }}-{{ $name }}
+  labels:
+    {{- include "urlshortener.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: maintenance
+spec:
+  schedule: {{ $task.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 300
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            {{- include "urlshortener.labels" $ | nindent 12 }}
+            app.kubernetes.io/component: maintenance
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: task
+              image: {{ include "urlshortener.image" (dict "root" $ "img" $.Values.backend.image) }}
+              imagePullPolicy: {{ $.Values.image.pullPolicy }}
+              envFrom:
+                - configMapRef:
+                    name: {{ include "urlshortener.fullname" $ }}-config
+              env:
+                {{- include "urlshortener.secretEnv" $ | nindent 16 }}
+                - name: SPRING_PROFILES_ACTIVE
+                  value: "{{ $.Values.config.springProfile }},task"
+                - name: APP_TASK
+                  value: {{ $task.task | quote }}
+                # One connection is all a single-threaded task needs; taking a pod's worth of
+                # pool out of the budget for it would defeat the point.
+                - name: HIKARI_MAX_POOL_SIZE
+                  value: "2"
+              resources:
+                {{- toYaml $.Values.maintenance.resources | nindent 16 }}
+{{- end }}
+{{- end }}

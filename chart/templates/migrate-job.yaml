@@ -1,0 +1,53 @@
+{{- if .Values.migrations.job.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # A fresh name per revision: a Job's pod template is immutable, so reusing the name makes
+  # the second upgrade fail rather than migrate.
+  name: {{ include "urlshortener.fullname" . }}-migrate-{{ .Release.Revision }}
+  labels:
+    {{- include "urlshortener.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrate
+  annotations:
+    # Runs to completion before any new pod starts. Flyway's advisory lock already made
+    # concurrent pods safe, so this is not a correctness fix -- it front-loads the schema
+    # change so a rollout is not N replicas each waiting on the same lock, and it fails the
+    # release on a bad migration instead of crash-looping the new pods.
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrations.job.backoffLimit }}
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      labels:
+        {{- include "urlshortener.labels" . | nindent 8 }}
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: {{ include "urlshortener.image" (dict "root" . "img" .Values.backend.image) }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "urlshortener.fullname" . }}-config
+          env:
+            {{- include "urlshortener.secretEnv" . | nindent 12 }}
+            # The same image and the same code as the service, so the migrations applied here
+            # can never be a different set from the ones the application expects.
+            - name: SPRING_PROFILES_ACTIVE
+              value: "{{ .Values.config.springProfile }},task"
+            - name: APP_TASK
+              value: migrate
+            # A migration needs one connection. Taking a full pod's pool would push the
+            # cluster over the connection budget precisely during a rollout, when the old
+            # replicas are still holding theirs.
+            - name: HIKARI_MAX_POOL_SIZE
+              value: "2"
+            - name: HIKARI_MIN_IDLE
+              value: "1"
+          resources:
+            {{- toYaml .Values.migrations.job.resources | nindent 12 }}
+{{- end }}

@@ -1,0 +1,27 @@
+{{- if .Values.valkey.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "urlshortener.fullname" . }}-valkey-config
+  labels:
+    {{- include "urlshortener.labels" . | nindent 4 }}
+    app.kubernetes.io/component: valkey
+data:
+  valkey.conf: |
+    # Bound memory explicitly. Without maxmemory the process grows until the
+    # kubelet OOM-kills the container, taking the redirect cache AND every
+    # unprocessed analytics click with it -- silently.
+    maxmemory {{ .Values.valkey.maxmemory }}
+
+    # volatile-lru evicts ONLY keys that carry a TTL.
+    #   redirect:code:*  -> has TTL  -> evictable, rebuilt from Postgres
+    #   rl:create:*      -> has TTL  -> evictable, fails open
+    #   analytics:click:stream -> NO TTL -> never evicted
+    # This lets one instance safely serve a cache workload (wants eviction)
+    # and a queue workload (must never be evicted).
+    maxmemory-policy {{ .Values.valkey.maxmemoryPolicy }}
+
+    appendonly {{ .Values.valkey.appendonly }}
+    appendfsync everysec
+    save ""
+{{- end }}

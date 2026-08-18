@@ -1,0 +1,73 @@
+# DEV cluster overlay -- for deploying the FULL stack to a local KinD/Minikube.
+#
+#   helm upgrade --install urlshortener ./chart -f chart/values-dev.yaml
+#
+# NOTE: for day-to-day coding you almost certainly want dev/docker-compose.dev.yml
+# plus `./mvnw spring-boot:run` instead. This file is for exercising the chart
+# itself, or testing Kubernetes behaviour locally.
+
+image:
+  # Images side-loaded via `kind load docker-image` are not in any registry,
+  # so the kubelet must never try to pull them.
+  pullPolicy: Never
+
+backend:
+  replicas: 1
+  service:
+    type: NodePort
+    nodePort: 30080
+  resources:
+    requests: { cpu: 200m, memory: 256Mi }
+    limits:   { cpu: "1",  memory: 768Mi }
+  hpa:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 3
+  podDisruptionBudget:
+    enabled: false
+
+frontend:
+  replicas: 1
+  service:
+    type: NodePort
+    nodePort: 30000
+
+postgres:
+  maxConnections: 100
+  reservedConnections: 10
+  persistence:
+    size: 1Gi
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits:   { cpu: "1",  memory: 1Gi }
+
+valkey:
+  maxmemory: 128mb
+  persistence:
+    size: 1Gi
+  resources:
+    requests: { cpu: 50m,  memory: 128Mi }
+    limits:   { cpu: 250m, memory: 256Mi }
+
+config:
+  rateLimitAnonCapacity: 1000
+  rateLimitAuthCapacity: 5000
+  # NodePort is reachable directly on a local cluster, so the header stays untrusted.
+  trustProxyHeaders: false
+  analytics:
+    retentionDays: 30
+  logLevelApp: DEBUG
+  appBaseUrl: http://localhost
+
+maintenance:
+  jobs:
+    cleanup-anonymous:
+      schedule: "*/10 * * * *"
+
+secrets:
+  postgresUser: postgres
+  postgresPassword: dev_password_not_secret
+  jwtSecret: dev_jwt_secret_must_be_at_least_32_bytes_long_for_hs256
+
+ingress:
+  enabled: true

@@ -1,0 +1,200 @@
+# Baseline defaults. Safe but deliberately unopinionated -- every environment
+# file below overrides what it needs. Secrets have NO defaults on purpose:
+# a missing secret must fail the install, not silently ship a known password.
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  registry: ""              # e.g. ghcr.io/sarcastic-soul  (empty = local images)
+  pullPolicy: IfNotPresent
+
+backend:
+  image:
+    repository: url-shortener-backend
+    tag: latest
+  replicas: 3
+  service:
+    type: ClusterIP
+    port: 8080
+    nodePort: null
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 1Gi
+  # startupProbe absorbs slow JVM boot so liveness/readiness can stay fast.
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 5
+  terminationGracePeriodSeconds: 45
+  preStopSleepSeconds: 5
+  hpa:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 15
+    targetCPUUtilizationPercentage: 65
+    # Requires prometheus-adapter to serve the custom metric. Left OFF until
+    # that exists: an unservable metric produces FailedGetPodsMetric events
+    # and blocks scale-DOWN, which is worse than not declaring it.
+    requestsPerSecond:
+      enabled: false
+      averageValue: 500
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+frontend:
+  image:
+    repository: url-shortener-frontend
+    tag: latest
+  replicas: 2
+  service:
+    type: ClusterIP
+    port: 8081
+    nodePort: null
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+postgres:
+  enabled: true
+  image: postgres:17-alpine
+  database: url_shortener
+  maxConnections: 200
+  # Held back for superuser/monitoring/migration connections.
+  reservedConnections: 20
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "2"
+      memory: 4Gi
+
+valkey:
+  enabled: true
+  image: valkey/valkey:8-alpine
+  # Must sit meaningfully below resources.limits.memory, or the kernel
+  # OOM-kills the container before Valkey ever applies its own policy.
+  maxmemory: 400mb
+  # volatile-lru evicts ONLY keys carrying a TTL. Redirect-cache and
+  # rate-limit keys have TTLs; the analytics stream does not, so click data
+  # is never evicted to make room for cache entries. This is what allows a
+  # single instance to serve both workloads safely.
+  maxmemoryPolicy: volatile-lru
+  appendonly: "yes"
+  persistence:
+    enabled: true
+    size: 2Gi
+    storageClass: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+config:
+  springProfile: prod
+  # Leave empty to auto-derive from postgres.maxConnections and
+  # backend.hpa.maxReplicas. See urlshortener.hikariPoolSize in _helpers.tpl.
+  hikariMaxPoolSize: ""
+  hikariMinIdle: 2
+  tomcatMaxThreads: 200
+  tomcatAcceptCount: 500
+  # Load-shedding ceiling for database-bound paths. Empty derives 2x the pool.
+  dbBulkheadMaxConcurrent: ""
+  rateLimitEnabled: true
+  rateLimitAnonCapacity: 20
+  rateLimitAuthCapacity: 200
+  # Read X-Forwarded-For at all? Only true where the ingress is unavoidable AND overwrites it.
+  # If a client can reach the Service directly, this hands every caller their own rate-limit
+  # bucket -- which is exactly the defect this setting exists to prevent.
+  trustProxyHeaders: false
+  redirectCacheTtlSeconds: 86400
+  analytics:
+    # Approximate MAXLEN applied by the producer, so the stream is bounded even if every
+    # consumer stops. Sized to fit comfortably inside valkey.maxmemory.
+    streamMaxLength: 100000
+    batchSize: 1000
+    reclaimIdleMs: 60000
+    retentionDays: 90
+  appBaseUrl: http://localhost
+  logLevelRoot: WARN
+  logLevelApp: INFO
+
+# Schema migration as a pre-upgrade hook rather than N replicas racing for Flyway's advisory
+# lock on startup. Runs the service image with the `task` profile, so there is no second copy
+# of the migrations to fall out of step.
+migrations:
+  job:
+    enabled: true
+    backoffLimit: 1
+    resources:
+      requests: { cpu: 100m, memory: 256Mi }
+      limits:   { cpu: "1",  memory: 768Mi }
+
+# Work that must happen exactly once, as CronJobs instead of @Scheduled on every replica.
+maintenance:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits:   { cpu: 500m, memory: 768Mi }
+  jobs:
+    cleanup-anonymous:
+      enabled: true
+      task: cleanup-anonymous
+      schedule: "*/30 * * * *"
+    clicks-retention:
+      enabled: true
+      task: clicks-retention
+      schedule: "15 3 * * *"
+
+metrics:
+  # Both need the Prometheus Operator CRDs from chart/observability. Off by default so the
+  # chart installs on a cluster that has neither.
+  serviceMonitor:
+    enabled: false
+    interval: 15s
+    labels: {}
+  prometheusRule:
+    enabled: false
+    labels: {}
+    # Alert on the failure modes this project actually has, at thresholds tied to its config.
+    redirectP95Seconds: 0.5
+    poolWaitSeconds: 0.1
+    streamLength: 50000
+    valkeyMemoryPercent: 80
+
+secrets:
+  postgresUser: ""
+  postgresPassword: ""
+  jwtSecret: ""
+  # Load generators only. Empty means nothing can bypass the rate limiter.
+  rateLimitBypassSecret: ""
+
+ingress:
+  enabled: true
+  className: nginx
+  host: ""
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+  # Edge rate limiting. Rejects floods at the proxy, before they consume a
+  # Tomcat thread, a Redis round-trip, or a database connection. The
+  # application-level limiter is the LAST line of defence, not the first.
+  rateLimit:
+    enabled: false
+    requestsPerSecond: 100
+    connections: 50

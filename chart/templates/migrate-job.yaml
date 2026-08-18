@@ -13,7 +13,13 @@ metadata:
     # concurrent pods safe, so this is not a correctness fix -- it front-loads the schema
     # change so a rollout is not N replicas each waiting on the same lock, and it fails the
     # release on a bad migration instead of crash-looping the new pods.
-    "helm.sh/hook": pre-install,pre-upgrade
+    #
+    # UPGRADE ONLY, deliberately. A pre-install hook runs before Helm creates ANY chart
+    # resource, so with postgres.enabled it would run before the database it migrates exists
+    # -- a deadlock that ends in `failed pre-install: timed out waiting for the condition`.
+    # A fresh install has no rollout to front-load and no old schema to break: the backend's
+    # own Flyway, holding the same advisory lock, creates it on first start.
+    "helm.sh/hook": pre-upgrade
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
 spec:

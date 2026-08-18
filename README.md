@@ -94,7 +94,7 @@ flowchart TD
 
 **A click** is drained from that stream by a consumer group: one existence query, one batched insert, one batched counter update per batch. Unacknowledged messages are reclaimed by another pod if a consumer dies mid-batch.
 
-**Maintenance** runs as CronJobs, not `@Scheduled` methods — expired anonymous links every 30 minutes, click-history retention nightly. Migrations run as a pre-upgrade Helm hook, so no pod starts against a schema it does not expect.
+**Maintenance** runs as CronJobs, not `@Scheduled` methods — expired anonymous links every 30 minutes, click-history retention nightly. Migrations run as a pre-upgrade Helm hook, so an upgrade never starts a pod against a schema it does not expect; a fresh install has no old schema to break, and the backend's own Flyway creates it under an advisory lock.
 
 ## How it scales
 

@@ -102,14 +102,19 @@ jobs:
             --set backend.hpa.minReplicas=2 \
             --wait --timeout 10m
 
-      - name: Verify the migration hook ran
+      - name: Verify the schema was migrated
         run: |
-          # The pre-upgrade Job is hook-deleted on success, so its absence plus a healthy
-          # rollout is the pass condition. A failed migration fails `helm upgrade` above.
+          # On a fresh install the migrate Job does not run -- it is a pre-upgrade hook, because
+          # a pre-install one would run before the database exists. The backend's own Flyway
+          # applies the schema instead, so assert the outcome rather than the mechanism.
           kubectl get jobs -l app.kubernetes.io/component=migrate || true
-          echo "Schema version:"
-          kubectl exec urlshortener-postgres-0 -- psql -U postgres -d url_shortener -t \
-            -c "SELECT max(version) FROM flyway_schema_history;"
+          VERSION=$(kubectl exec urlshortener-postgres-0 -- psql -U postgres -d url_shortener -t -A \
+            -c "SELECT max(version) FROM flyway_schema_history;" | tr -d '[:space:]')
+          if [ -z "$VERSION" ]; then
+            echo "::error::No migrations recorded in flyway_schema_history"
+            exit 1
+          fi
+          echo "Schema version: $VERSION"
 
       - uses: grafana/setup-k6-action@v1
 

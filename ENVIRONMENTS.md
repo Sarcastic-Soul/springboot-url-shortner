@@ -191,9 +191,12 @@ and Minikube clusters destroyed after every run. **There is nothing to rotate** 
 system is protected by either string. Rewriting history to purge them would break every clone
 to remove two values that unlock nothing.
 
-What mattered was that the chart could hand a real deployment a known password by default. It
-can't: `secrets.postgresPassword` and `secrets.jwtSecret` have no defaults and a missing one
-fails the install.
+What mattered was that a deployment could pick up a known credential by default. It can't, on
+either path: `secrets.postgresPassword` and `secrets.jwtSecret` have no chart defaults and a
+missing one fails the install, and `jwt.secret` has no application default either — the `prod`
+profile refuses to start without `JWT_SECRET` rather than silently signing real tokens with a
+key published in this repo. A secret shorter than the 32 bytes HS256 needs fails at startup
+too, instead of at whoever's first login.
 
 If you do deploy for real, generate fresh values and keep them out of the repo:
 

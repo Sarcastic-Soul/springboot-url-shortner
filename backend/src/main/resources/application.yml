@@ -146,6 +146,10 @@ management:
         http.server.requests: 10ms,50ms,100ms,200ms,500ms,1s,2s,5s
 
 jwt:
-  secret: ${JWT_SECRET:6af69b2bbd4f4eecb14af72dfad91e0c71c73f8271dc3db889d9b2d0d8dffb86}
+  # No default, deliberately. A fallback here is a signing key published in a public repo:
+  # any deployment that forgot to set JWT_SECRET would sign real tokens with a value anyone
+  # could read, and would do it silently. Without a default the application refuses to start
+  # instead. The local profile supplies its own throwaway value.
+  secret: ${JWT_SECRET}
   access-token-expiration: ${JWT_EXPIRATION:900000}
   refresh-token-expiration: ${JWT_REFRESH_EXPIRATION:2592000000}

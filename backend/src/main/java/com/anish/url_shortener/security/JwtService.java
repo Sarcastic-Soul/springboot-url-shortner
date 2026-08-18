@@ -8,6 +8,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import jakarta.annotation.PostConstruct;
+
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
@@ -20,11 +22,27 @@ public class JwtService {
     /** Carries the user id so authentication needs no database round trip. */
     public static final String CLAIM_USER_ID = "uid";
 
-    @Value("${jwt.secret:6af69b2bbd4f4eecb14af72dfad91e0c71c73f8271dc3db889d9b2d0d8dffb86}")
+    @Value("${jwt.secret}")
     private String secret;
 
     @Value("${jwt.access-token-expiration:900000}")
     private long expiration;
+
+    /**
+     * Fails the startup rather than the first login. HS512 needs at least 32 bytes, and
+     * {@code Keys.hmacShaKeyFor} would otherwise throw on the first token issued — turning a
+     * misconfiguration into a runtime error for whoever happens to sign up first.
+     */
+    @PostConstruct
+    void validateSecret() {
+        int bytes = secret == null ? 0 : secret.getBytes(StandardCharsets.UTF_8).length;
+        if (bytes < 32) {
+            throw new IllegalStateException(
+                    "jwt.secret must be at least 32 bytes for HS256; got " + bytes
+                            + ". Set the JWT_SECRET environment variable."
+            );
+        }
+    }
 
     private SecretKey key() {
         return Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));

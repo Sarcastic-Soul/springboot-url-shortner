@@ -22,6 +22,11 @@ spring:
   main:
     banner-mode: off
 
+# Local-only, and worthless anywhere else: it signs tokens for a database on your laptop.
+# Named so that seeing it in a running deployment is immediately alarming.
+jwt:
+  secret: local-development-only-do-not-use-anywhere-else
+
 app:
   base-url: http://localhost:8080
   rate-limit:

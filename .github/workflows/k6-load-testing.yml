@@ -1,6 +1,6 @@
 name: Tier B — Capacity (k6 on KinD)
 
-# TIER B of the three-tier strategy (see plan.md Stage 7).
+# TIER B of the three-tier strategy (see "Testing" in README.md).
 #
 # READ THIS BEFORE QUOTING ANY NUMBER FROM THIS WORKFLOW.
 #

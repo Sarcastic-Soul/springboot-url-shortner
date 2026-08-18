@@ -167,7 +167,7 @@ pods — so scaling out *caused* the failures the autoscaler existed to prevent.
 `helm install` fails if the derived pool drops below 2, and
 [`.github/workflows/chart-lint.yml`](.github/workflows/chart-lint.yml) fails the build if any
 environment oversubscribes. Set `config.hikariMaxPoolSize` explicitly only when something
-else owns the budget — e.g. PgBouncer (plan.md Stage 8).
+else owns the budget — e.g. PgBouncer in transaction mode.
 
 ---
 

@@ -21,7 +21,7 @@
 #
 # Treat results from this file as a REGRESSION signal, not a capacity claim.
 # Real capacity numbers need a multi-node cluster with load driven from a
-# separate machine (plan.md Stage 7, Tier B).
+# separate machine (see "Testing" in README.md).
 # ---------------------------------------------------------------------------
 
 image:

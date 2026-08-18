@@ -1,15 +1,14 @@
-# IDEs
+# --- Editors / OS ---
 .idea/
 .vscode/
 *.iml
 *.iws
 *.ipr
 .eclipse/
+.DS_Store
 
-# Backend (Java/Spring Boot/Maven)
+# --- Backend (Java / Maven) ---
 backend/target/
-backend/!**/src/main/**/target/
-backend/!**/src/test/**/target/
 backend/.mvn/wrapper/maven-wrapper.jar
 backend/.sts4-cache
 backend/.settings
@@ -17,25 +16,36 @@ backend/.classpath
 backend/.project
 backend/.factorypath
 backend/.springBeans
-backend/application-local.yml
-backend/application-prod.yml.local
-backend/application-prod.yml
 HELP.md
 
-# Frontend (Node.js/Vite)
+# Scratch profile overrides kept beside the pom, never the real configs in
+# src/main/resources (see backend/.gitignore for why the anchoring matters).
+backend/application-local.yml
+backend/application-prod.yml
+backend/application-*.local.yml
+
+# --- Frontend (Node / Vite) ---
 frontend/node_modules/
 frontend/dist/
 frontend/dist-ssr/
 frontend/*.local
-frontend/.env.development.local
-frontend/.env.test.local
-frontend/.env.production.local
-frontend/.env.local
 frontend/.eslintcache
-frontend/.vite-temp/
 frontend/.vite/
+frontend/.vite-temp/
 
-# Environment Variables
+# --- Helm ---
+# `helm dependency build` vendors upstream charts and writes a lock; both are
+# reproducible from Chart.yaml and neither belongs in git.
+chart/**/charts/
+chart/**/Chart.lock
+chart/**/tmpcharts*/
+*.tgz
+
+# --- Test output ---
+# k6 writes these at the repo root; CI uploads them as artifacts instead.
+k6-summary-*.json
+
+# --- Secrets ---
 .env
 .env.*
 !.env.example

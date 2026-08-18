@@ -38,7 +38,7 @@ frontend:
 postgres:
   # Self-hosted Postgres with a single replica and a ReadWriteOnce volume is
   # a hard ceiling on the "distributed" claim. Move to managed Postgres +
-  # PgBouncer (plan.md Stage 8) when leaving single-node.
+  # PgBouncer in transaction mode when leaving single-node.
   enabled: true
   maxConnections: 200
   reservedConnections: 20

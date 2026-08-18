@@ -1,6 +1,6 @@
 name: CI Gate (build, tests, Tier A k6)
 
-# TIER A of the three-tier strategy (see plan.md Stage 7).
+# TIER A of the three-tier strategy (see "Testing" in README.md).
 #
 # Runs on every pull request and must stay fast enough that nobody is tempted to skip it.
 # Deliberately small: at 150 VUs the runner is not the bottleneck, so a threshold breach means

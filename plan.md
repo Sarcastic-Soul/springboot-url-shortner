@@ -70,7 +70,7 @@ now shed load instead of queueing into a timeout.
 | D14 | Secrets committed in plaintext | Chart could ship a known password by default | ✅ Chart requires both, no defaults, install fails without them. The committed values were placeholders (`postgres_password`) on a ClusterIP service in ephemeral clusters — nothing deployed is protected by them, so there is nothing to rotate |
 | D15 | 8 zero-byte Java files incl. `RequestIdFilter` | No correlation IDs for log aggregation | ✅ `RequestIdFilter` implemented; the other seven deleted |
 | D16 | `backend/.gitignore` patterns unanchored | Profile configs were never committed | ✅ Fixed |
-| D17 | `package-lock.json` out of sync | `npm ci` refused | ✅ Regenerated. **`npm audit` still reports 5 vulnerabilities (1 moderate, 4 high) — unaddressed** |
+| D17 | `package-lock.json` out of sync | `npm ci` refused | ✅ Regenerated, and the 5 advisories cleared — all were patch-level, lockfile-only, no direct dependency changed |
 | D18 | Fixed-window `INCR` with a non-atomic `EXPIRE` | 2× capacity across a window boundary; a dying pod leaked a TTL-less key | ✅ Single atomic Lua token bucket using Redis's own clock |
 | D19 | Synchronous `urlRepository.save` per redirect | A blocking Postgres write on the hot path, for a counter nobody read synchronously | ✅ Folded into the batched consumer update |
 | D20 | Two disagreeing click counters | `COUNT(*)` in one screen, `urls.click_count` in another | ✅ `urls.click_count` is authoritative |
@@ -540,9 +540,12 @@ optional `limit-rps` / `limit-connections` annotations.
   reader, the `country` column (`V8__drop_click_country.sql`), the field in
   `EnrichedClickContext` and `ClickHistoryResponse`, the TypeScript interface, and the claim.
 - ✅ **`backend/.gitignore` anchoring fixed (D16).**
-- ✅ **`package-lock.json` regenerated (D17).** ⬜ `npm audit` still reports 5 vulnerabilities
-  (1 moderate, 4 high). Not addressed in this pass — `npm audit fix` on a transitive Vite
-  dependency chain wants review, not a reflex.
+- ✅ **`package-lock.json` regenerated and its 5 advisories cleared (D17).** All were
+  semver-patch fixes reachable without `--force`: `brace-expansion`, `nanoid` and `postcss`
+  arrive through Vite and only run at build time, and the `react-router` advisory is specific
+  to RSC mode, which a Vite SPA does not use. Patched regardless, since none of it cost
+  anything: lockfile-only, no direct dependency version changed, `npm ci` and the build both
+  still clean.
 - ✅ **Secrets no longer defaultable.** `k8s/` is deleted and the chart requires both values
   with no fallback. The values that remain in history were placeholders on a cluster-internal
   Postgres in throwaway clusters, so there is nothing to rotate and no reason to rewrite
@@ -573,6 +576,13 @@ cluster run rather than after.
   now `@Profile("!task")`, with `PasswordEncoder` moved to `AppConfig` because `AuthService`
   needs it in every context. This would have surfaced as a crash-looping Job on the first
   `helm upgrade`.
+- **A signing key with a public default.** `jwt.secret` fell back to a literal hex string
+  committed in `application.yml` and again in `JwtService`. Helm deployments always set
+  `JWT_SECRET`, but anything else — a bare `java -jar`, a `docker run` missing the variable —
+  would sign real tokens with a key anyone reading this repo could forge against, and would do
+  it without a word. The default is gone: `prod` now refuses to start without `JWT_SECRET`, the
+  `local` profile carries an obviously-throwaway value, and a secret under HS256's 32-byte
+  minimum fails at startup rather than at the first person to log in.
 - **JWT signature verified twice per request** — `isValid()` then `extractEmail()` both parsed
   the token. Collapsed into one `parse()` returning `Optional<Claims>`.
 - **Hibernate batching was never enabled**, so the consumer's "batch" insert was a thousand

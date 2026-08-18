@@ -34,6 +34,7 @@ class UrlServiceTest {
     @Mock private UrlSafetyService urlSafetyService;
     @Mock private AsyncAnalyticsService asyncAnalyticsService;
     @Mock private RedirectCacheService redirectCacheService;
+    @Mock private UrlLookupService urlLookupService;
     @Mock private AppProperties appProperties;
 
     @InjectMocks

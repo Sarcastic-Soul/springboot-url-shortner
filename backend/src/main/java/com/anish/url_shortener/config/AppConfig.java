@@ -8,6 +8,8 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import ua_parser.Parser;
 
 @Configuration
@@ -19,6 +21,13 @@ public class AppConfig {
     @Bean
     Parser userAgentParser() {
         return new Parser();
+    }
+
+    // Not in SecurityConfig: that is servlet-only, and AuthService needs an encoder in task
+    // pods too.
+    @Bean
+    PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
     }
 
     @Bean

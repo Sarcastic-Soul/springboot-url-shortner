@@ -1,0 +1,15 @@
+# TASK -- one-shot Job / CronJob pods. Activated as `prod,task`.
+#
+#   SPRING_PROFILES_ACTIVE=prod,task APP_TASK=cleanup-anonymous java -jar app.jar
+#
+# The pod does one job and exits. It serves no traffic, so it starts no web server, and it
+# schedules nothing, so it cannot duplicate the work it was created to do exactly once.
+
+spring:
+  main:
+    web-application-type: none
+    banner-mode: off
+
+app:
+  maintenance:
+    in-process-scheduler: false

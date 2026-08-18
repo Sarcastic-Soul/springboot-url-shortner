@@ -33,7 +33,10 @@ public class AnalyticsService {
         Url url = urlRepository.findByIdAndUser(urlId, user)
                 .orElseThrow(() -> new NoSuchElementException("URL not found"));
 
-        long totalClicks = urlClickRepository.countByUrl(url);
+        // urls.click_count is the authoritative total. It and COUNT(*) over url_clicks used to
+        // both be reported, in different screens, and they disagree: the counter is advanced for
+        // every redirect, while rows are only kept for the retention window.
+        long totalClicks = url.getClickCount() == null ? 0L : url.getClickCount();
 
         List<ClickHistoryResponse> clicks =
                 urlClickRepository.findTop20ByUrlOrderByClickedAtDesc(url)
@@ -52,7 +55,6 @@ public class AnalyticsService {
         return new ClickHistoryResponse(
                 click.getClickedAt(),
                 click.getIpAddress(),
-                click.getCountry(),
                 click.getDevice(),
                 click.getBrowser(),
                 click.getOs(),

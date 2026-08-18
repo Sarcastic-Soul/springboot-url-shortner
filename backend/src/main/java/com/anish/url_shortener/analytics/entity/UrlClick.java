@@ -32,8 +32,6 @@ public class UrlClick {
 
     private String ipHash;
 
-    private String country;
-
     private String device;
 
     private String browser;

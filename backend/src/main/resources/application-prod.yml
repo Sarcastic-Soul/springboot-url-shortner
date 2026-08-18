@@ -1,0 +1,29 @@
+# PROD and TEST -- identical config path.
+#
+#   prod : helm upgrade --install urlshortener ./chart -f chart/values-prod.yaml
+#   test : helm upgrade --install urlshortener ./chart -f chart/values-loadtest.yaml
+#
+# The load-test overlay differs ONLY in replica counts and a rate-limit
+# bypass for the load generator. It does NOT change the profile, so
+# benchmarks describe the system that actually gets deployed.
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/url_shortener}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:valkey}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+logging:
+  # One JSON object per line, with MDC entries -- including the request id set by
+  # RequestIdFilter -- promoted to fields. Grep still works; so does a log aggregator.
+  structured:
+    format:
+      console: ${LOG_STRUCTURED_FORMAT:ecs}
+  level:
+    root: ${LOG_LEVEL_ROOT:WARN}
+    com.anish.url_shortener: ${LOG_LEVEL_APP:INFO}

@@ -30,9 +30,9 @@ public class AuthService {
                 .emailVerified(false)
                 .build();
 
-        userRepository.save(user);
+        User saved = userRepository.save(user);
 
-        String token = jwtService.generateToken(user.getEmail());
+        String token = jwtService.generateToken(saved);
 
         return new AuthResponse(
                 token,
@@ -50,7 +50,7 @@ public class AuthService {
             throw new IllegalArgumentException("Invalid credentials");
         }
 
-        String token = jwtService.generateToken(user.getEmail());
+        String token = jwtService.generateToken(user);
 
         return new AuthResponse(
                 token,

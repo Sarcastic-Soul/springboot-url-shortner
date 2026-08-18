@@ -41,4 +41,12 @@ public class GlobalExceptionHandler {
                 Map.of("error", ex.getReason() == null ? status.getReasonPhrase() : ex.getReason())
         );
     }
+
+    /** Load shedding: a fast 503 carrying Retry-After, not a request left to time out. */
+    @ExceptionHandler(ServiceOverloadedException.class)
+    public ResponseEntity<Map<String, String>> handleOverloaded(ServiceOverloadedException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header("Retry-After", Long.toString(ex.getRetryAfterSeconds()))
+                .body(Map.of("error", "Service is at capacity. Please retry shortly."));
+    }
 }

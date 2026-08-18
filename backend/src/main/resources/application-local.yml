@@ -1,0 +1,47 @@
+# DEV -- app runs on the host, dependencies come from dev/docker-compose.dev.yml
+#
+#   docker compose -f dev/docker-compose.dev.yml up -d
+#   cd backend && ./mvnw spring-boot:run
+#
+# Activated by spring.profiles.active=local (see backend/.mvn or your IDE run config).
+
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/url_shortener
+    username: postgres
+    password: postgres
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  main:
+    banner-mode: off
+
+app:
+  base-url: http://localhost:8080
+  rate-limit:
+    # Generous locally so you are not throttled while clicking around,
+    # but still ON so the code path is exercised during development.
+    enabled: true
+    anonymous:
+      capacity: 1000
+      refill-tokens: 1000
+    authenticated:
+      capacity: 5000
+      refill-tokens: 5000
+  maintenance:
+    # No CronJobs on a laptop, so run cleanup in process here.
+    in-process-scheduler: true
+
+logging:
+  level:
+    root: WARN
+    org.springframework: WARN
+    org.hibernate: WARN
+    org.flywaydb: INFO
+    com.anish.url_shortener: DEBUG

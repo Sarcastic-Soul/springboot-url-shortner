@@ -18,6 +18,7 @@ backend/.project
 backend/.factorypath
 backend/.springBeans
 backend/application-local.yml
+backend/application-prod.yml.local
 backend/application-prod.yml
 HELP.md
 

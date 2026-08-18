@@ -1,3 +1,9 @@
+# Shared defaults for every environment.
+# Profile selection:
+#   local -> dev  (app on host, deps from dev/docker-compose.dev.yml)
+#   prod  -> prod AND test  (identical config path; test only overlays env vars)
+#   task  -> one-shot Job/CronJob pods; see com.anish.url_shortener.task.TaskRunner
+
 spring:
   application:
     name: url-shortener
@@ -6,63 +12,140 @@ spring:
     open-in-view: false
     hibernate:
       ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          # The analytics consumer writes clicks in batches. Without this, "batch" means a
+          # thousand individual round trips.
+          batch_size: 100
+        order_inserts: true
+        order_updates: true
 
   flyway:
     enabled: true
 
   datasource:
     hikari:
-      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:50}
-      minimum-idle: 10
+      # Pool size is a function of the database connection budget:
+      #   pool_per_pod = (postgres_max_connections - reserved) / hpa_maxReplicas
+      # Default assumes max_connections=200, reserved=20, maxReplicas=15 -> 12.
+      # Raising this WITHOUT raising max_connections causes connection
+      # exhaustion at scale, not extra throughput.
+      maximum-pool-size: ${HIKARI_MAX_POOL_SIZE:12}
+      minimum-idle: ${HIKARI_MIN_IDLE:2}
       connection-timeout: 10000
       idle-timeout: 600000
       max-lifetime: 1800000
+
   data:
     redis:
-      host: localhost
-      port: 6379
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
 
 server:
+  # Drain in-flight requests on SIGTERM instead of dropping them.
+  # Required for zero-error HPA scale-down and rolling deploys.
+  shutdown: graceful
   tomcat:
     threads:
-      max: 1000
-    accept-count: 2000
+      # Sized relative to the connection pool. Threads far in excess of the
+      # pool only deepen the queue; they cannot increase throughput.
+      max: ${TOMCAT_MAX_THREADS:200}
+    accept-count: ${TOMCAT_ACCEPT_COUNT:500}
+  # Deliberately `none`. The framework strategy rewrites getRemoteAddr() from the LEFTMOST
+  # X-Forwarded-For entry, which is the part a client controls. ClientIpResolver owns this
+  # decision instead, gated on app.client-ip.trust-proxy.
+  forward-headers-strategy: none
+
+resilience4j:
+  bulkhead:
+    instances:
+      # Load shedding for database-bound paths. Sized at roughly twice the connection pool:
+      # enough that a short burst queues briefly, few enough that a sustained overload is
+      # rejected in microseconds instead of occupying a Tomcat thread for the full 10s
+      # connection timeout and then failing anyway. A fast 503 beats a slow 500.
+      database:
+        max-concurrent-calls: ${DB_BULKHEAD_MAX_CONCURRENT:24}
+        max-wait-duration: 0
+  circuitbreaker:
+    instances:
+      redisCache:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
 
 app:
-  base-url: http://localhost:8080
+  base-url: ${APP_BASE_URL:http://localhost:8080}
   anonymous:
     max-expiry-days: 7
   url-safety:
     blocked-domains:
       - phishing.test
       - malware.test
-  geoip:
-    database-path:
+  client-ip:
+    # OFF by default: trusting a forwarded header with nothing in front of you is the same as
+    # letting every caller choose their own rate-limit bucket. The chart enables it only where
+    # the ingress overwrites the header.
+    trust-proxy: ${TRUST_PROXY_HEADERS:false}
+    header: ${CLIENT_IP_HEADER:X-Forwarded-For}
   rate-limit:
     enabled: ${RATE_LIMIT_ENABLED:true}
     anonymous:
-      capacity: 100000
-      refill-tokens: 100000
+      capacity: ${RATE_LIMIT_ANON_CAPACITY:20}
+      refill-tokens: ${RATE_LIMIT_ANON_REFILL:20}
       refill-duration-minutes: 1
     authenticated:
-      capacity: 100000
-      refill-tokens: 100000
+      capacity: ${RATE_LIMIT_AUTH_CAPACITY:200}
+      refill-tokens: ${RATE_LIMIT_AUTH_REFILL:200}
       refill-duration-minutes: 1
+    # Empty means nobody can bypass. Set only for load generators.
+    bypass-secret: ${RATE_LIMIT_BYPASS_SECRET:}
   redirect-cache:
-    ttl-seconds: 86400
+    ttl-seconds: ${REDIRECT_CACHE_TTL_SECONDS:86400}
+  analytics:
+    stream-max-length: ${ANALYTICS_STREAM_MAX_LENGTH:100000}
+    batch-size: ${ANALYTICS_BATCH_SIZE:1000}
+    reclaim-idle-ms: ${ANALYTICS_RECLAIM_IDLE_MS:60000}
+    retention-days: ${ANALYTICS_RETENTION_DAYS:90}
+  maintenance:
+    # OFF by default: @Scheduled runs once per replica. In a cluster these are CronJobs.
+    in-process-scheduler: ${MAINTENANCE_IN_PROCESS:false}
+  task:
+    name: ${APP_TASK:}
 
 management:
   endpoints:
     web:
       exposure:
         include: health,info,prometheus
-
   endpoint:
     health:
       show-details: always
+      # Separate liveness/readiness so Kubernetes can tell "starting up"
+      # from "broken", and stop routing traffic without killing the pod.
+      probes:
+        enabled: true
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      # Server-side histogram buckets, without which histogram_quantile() has nothing to work
+      # from and every latency alert or dashboard has to be built on client-side numbers.
+      percentiles-histogram:
+        http.server.requests: true
+      slo:
+        http.server.requests: 10ms,50ms,100ms,200ms,500ms,1s,2s,5s
 
 jwt:
   secret: ${JWT_SECRET:6af69b2bbd4f4eecb14af72dfad91e0c71c73f8271dc3db889d9b2d0d8dffb86}
   access-token-expiration: ${JWT_EXPIRATION:900000}
   refresh-token-expiration: ${JWT_REFRESH_EXPIRATION:2592000000}
-

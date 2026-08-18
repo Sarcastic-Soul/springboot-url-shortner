@@ -1,0 +1,11 @@
+# The image is built from the packaged jar alone. Everything else only slows the
+# context upload and invalidates the cache on changes the image never sees.
+src/
+.mvn/
+mvnw
+mvnw.cmd
+pom.xml
+target/*
+!target/*.jar
+target/*-plain.jar
+target/*.jar.original

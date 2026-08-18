@@ -2,60 +2,47 @@ package com.anish.url_shortener.analytics.service;
 
 import com.anish.url_shortener.analytics.dto.ClickContext;
 import com.anish.url_shortener.analytics.dto.EnrichedClickContext;
-import com.anish.url_shortener.url.entity.Url;
-import org.junit.jupiter.api.BeforeEach;
+import com.anish.url_shortener.config.AppProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.data.redis.connection.stream.MapRecord;
-import org.springframework.data.redis.core.StreamOperations;
+import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AsyncAnalyticsServiceTest {
 
-    @Mock
-    private StringRedisTemplate redisTemplate;
+    @Mock private StringRedisTemplate redisTemplate;
+    @Mock private ClickEnrichmentService clickEnrichmentService;
 
-    @Mock
-    private ClickEnrichmentService clickEnrichmentService;
-
-    @Mock
-    private StreamOperations<String, String, String> streamOperations;
-
-    @InjectMocks
-    private AsyncAnalyticsService asyncAnalyticsService;
-
-    @BeforeEach
-    void setUp() {
-        lenient().when(redisTemplate.<String, String>opsForStream()).thenReturn(streamOperations);
+    private AsyncAnalyticsService service() {
+        return new AsyncAnalyticsService(redisTemplate, clickEnrichmentService, new AppProperties());
     }
 
     @Test
-    void trackClick_EnrichesAndPublishesToRedisStream() {
-        // Arrange
-        Url mockUrl = new Url();
-        mockUrl.setId(UUID.randomUUID());
-
+    void trackClick_enrichesAndPublishesToTheStream() {
         ClickContext context = new ClickContext("192.168.1.1", "Mozilla", "https://google.com");
-        EnrichedClickContext enriched = new EnrichedClickContext("hash123", "US", "Mobile", "Chrome", "Android");
+        when(clickEnrichmentService.enrich(context))
+                .thenReturn(new EnrichedClickContext("hash123", "Mobile", "Chrome", "Android"));
 
-        when(clickEnrichmentService.enrich(context)).thenReturn(enriched);
-        when(streamOperations.add(any(MapRecord.class))).thenReturn(null);
+        service().trackClick(UUID.randomUUID(), context);
 
-        // Act
-        asyncAnalyticsService.trackClick(mockUrl, context);
-
-        // Assert
         verify(clickEnrichmentService, times(1)).enrich(context);
-        verify(streamOperations, times(1)).add(any(MapRecord.class));
+        verify(redisTemplate, times(1)).execute(any(RedisCallback.class));
+    }
+
+    /** A cache entry written before urlId existed has none. That must not raise. */
+    @Test
+    void trackClick_withoutAUrlIdIsANoOp() {
+        service().trackClick(null, new ClickContext("192.168.1.1", "Mozilla", null));
+
+        verifyNoInteractions(clickEnrichmentService);
+        verifyNoInteractions(redisTemplate);
     }
 }

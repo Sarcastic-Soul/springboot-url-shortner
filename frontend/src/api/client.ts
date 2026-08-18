@@ -55,7 +55,6 @@ export interface PageResponse<T> {
 export interface ClickHistoryResponse {
   clickedAt: string;
   ipAddress: string;
-  country: string;
   device: string;
   browser: string;
   os: string;

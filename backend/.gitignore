@@ -32,5 +32,10 @@ build/
 ### VS Code ###
 .vscode/
 
-application-local.yml
-application-prod.yml
+# Anchored to the backend root so these match scratch overrides here only.
+# Unanchored, they also matched src/main/resources/application-{local,prod}.yml,
+# which meant the real profile configs were never committed -- the prod image
+# shipped without a prod profile and worked only via injected env vars.
+/application-local.yml
+/application-prod.yml
+/application-*.local.yml

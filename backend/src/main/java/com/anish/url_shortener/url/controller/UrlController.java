@@ -9,6 +9,7 @@ import com.anish.url_shortener.url.dto.VerifyPasswordRequest;
 import com.anish.url_shortener.url.dto.VerifyPasswordResponse;
 import com.anish.url_shortener.url.service.UrlService;
 import com.anish.url_shortener.analytics.dto.ClickContext;
+import com.anish.url_shortener.common.net.ClientIpResolver;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -29,6 +30,7 @@ import static org.springframework.http.HttpStatus.UNAUTHORIZED;
 public class UrlController {
 
     private final UrlService urlService;
+    private final ClientIpResolver clientIpResolver;
 
     @PostMapping("/api/v1/urls")
     public UrlResponse create(
@@ -60,6 +62,9 @@ public class UrlController {
         return ResponseEntity
                 .status(302)
                 .location(URI.create(decision.originalUrl()))
+                // Lets a benchmark measure the cache rather than assume it. The same signal is
+                // exported as a counter for Prometheus; this is the cheap per-request view.
+                .header("X-Cache", decision.cacheHit() ? "HIT" : "MISS")
                 .build();
 
     }
@@ -134,18 +139,12 @@ public class UrlController {
 
     private ClickContext clickContextFrom(HttpServletRequest request) {
         return new ClickContext(
-                clientIpFrom(request),
+                // Was a second, independent copy of the X-Forwarded-For parsing that made the
+                // rate limiter bypassable. There is one implementation of this now.
+                clientIpResolver.resolve(request),
                 request.getHeader("User-Agent"),
                 request.getHeader("Referer")
         );
-    }
-
-    private String clientIpFrom(HttpServletRequest request) {
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            return forwardedFor.split(",")[0].trim();
-        }
-        return request.getRemoteAddr();
     }
 
 }

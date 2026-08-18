@@ -13,6 +13,10 @@ import com.anish.url_shortener.url.dto.UrlResponse;
 import com.anish.url_shortener.url.entity.Url;
 import com.anish.url_shortener.url.repository.UrlRepository;
 
+import com.anish.url_shortener.exception.ServiceOverloadedException;
+
+import io.github.resilience4j.bulkhead.BulkheadFullException;
+import io.github.resilience4j.bulkhead.annotation.Bulkhead;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
@@ -41,8 +45,13 @@ public class UrlService {
     private final UrlSafetyService urlSafetyService;
     private final AsyncAnalyticsService asyncAnalyticsService;
     private final RedirectCacheService redirectCacheService;
+    private final UrlLookupService urlLookupService;
     private final AppProperties appProperties;
 
+    // Creation is the one write on the hot path and the only operation that cannot scale
+    // horizontally. Past the bulkhead's capacity callers get an immediate 503 with Retry-After
+    // rather than a connection-pool timeout dressed up as a 500.
+    @Bulkhead(name = "database", fallbackMethod = "shedCreate")
     public UrlResponse create(CreateUrlRequest request) {
         User user = getCurrentUserOrNull();
         boolean anonymous = user == null;
@@ -101,6 +110,11 @@ public class UrlService {
         );
     }
 
+    @SuppressWarnings("unused")
+    private UrlResponse shedCreate(CreateUrlRequest request, BulkheadFullException e) {
+        throw new ServiceOverloadedException(1);
+    }
+
     public RedirectDecision resolveRedirect(String shortCode, ClickContext clickContext) {
         Optional<CachedRedirectEntry> cachedRedirect = redirectCacheService.get(shortCode);
         if (cachedRedirect.isPresent()) {
@@ -109,20 +123,34 @@ public class UrlService {
                 redirectCacheService.evict(shortCode);
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Short URL has expired");
             }
-            return new RedirectDecision(false, entry.originalUrl());
+
+            // The cache-hit path used to return here having recorded nothing, so the links that
+            // served the most traffic were the ones with no analytics at all. Entries written
+            // before urlId existed have none; those are skipped rather than dropped.
+            if (entry.urlId() != null) {
+                asyncAnalyticsService.trackClick(entry.urlId(), clickContext);
+            }
+
+            return new RedirectDecision(false, entry.originalUrl(), true);
         }
 
-        Url url = findRedirectableUrl(shortCode);
+        Url url = urlLookupService.findRedirectableUrl(shortCode);
 
         if (url.getPasswordHash() != null && !url.getPasswordHash().isBlank()) {
-            return new RedirectDecision(true, null);
+            return new RedirectDecision(true, null, false);
         }
+
+        // Read-through population. Without this the cache is only ever written on create and
+        // update, so a link that was not created by recent activity -- or any link at all after
+        // a Valkey eviction or restart -- misses on EVERY request and goes to Postgres forever.
+        // The cache-first redirect path only holds if a miss teaches it something.
+        redirectCacheService.putForAnonymousRedirect(url);
 
         return completeRedirect(url, clickContext);
     }
 
     public String verifyProtectedLink(String shortCode, String password, ClickContext clickContext) {
-        Url url = findRedirectableUrl(shortCode);
+        Url url = urlLookupService.findRedirectableUrl(shortCode);
 
         if (url.getPasswordHash() == null || url.getPasswordHash().isBlank()) {
             return completeRedirect(url, clickContext).originalUrl();
@@ -297,39 +325,15 @@ public class UrlService {
     }
 
     private RedirectDecision completeRedirect(Url url, ClickContext clickContext) {
-        url.setClickCount(url.getClickCount() + 1);
-        urlRepository.save(url);
+        // No `urlRepository.save` here any more. That was the last blocking Postgres write on
+        // the redirect path: one UPDATE per redirect, holding a pooled connection, for a counter
+        // nobody reads synchronously. The consumer now folds these into one batched increment.
+        //
+        // The `url.getUser() != null` gate is gone too — it silently discarded every click on an
+        // anonymous link, which is most of them.
+        asyncAnalyticsService.trackClick(url.getId(), clickContext);
 
-        if (url.getUser() != null) {
-            asyncAnalyticsService.trackClick(url, clickContext);
-        }
-
-        return new RedirectDecision(false, url.getOriginalUrl());
-    }
-
-    private Url findRedirectableUrl(String shortCode) {
-        Url url = urlRepository.findByShortCode(shortCode)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Short URL not found"));
-
-        if (!url.getIsActive()) {
-            throw new ResponseStatusException(HttpStatus.GONE, "Short URL is inactive");
-        }
-
-        if (url.getExpiresAt() != null && url.getExpiresAt().isBefore(LocalDateTime.now())) {
-            url.setIsActive(false);
-            urlRepository.save(url);
-            redirectCacheService.evict(url.getShortCode());
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Short URL has expired");
-        }
-
-        if (url.getMaxClicks() != null && url.getClickCount() >= url.getMaxClicks()) {
-            url.setIsActive(false);
-            urlRepository.save(url);
-            redirectCacheService.evict(url.getShortCode());
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Short URL is no longer available");
-        }
-
-        return url;
+        return new RedirectDecision(false, url.getOriginalUrl(), false);
     }
 
     private void validateCreationPayload(CreateUrlRequest request, boolean anonymous) {

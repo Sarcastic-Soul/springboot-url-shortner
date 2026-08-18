@@ -1,4 +1,16 @@
-name: k6 Load & Performance Testing (KinD)
+name: Tier B — Capacity (k6 on KinD)
+
+# TIER B of the three-tier strategy (see plan.md Stage 7).
+#
+# READ THIS BEFORE QUOTING ANY NUMBER FROM THIS WORKFLOW.
+#
+# A GitHub Actions runner is 2-4 vCPU in total, and here it hosts Postgres, Valkey, every
+# backend JVM AND k6 itself. At a few thousand VUs the generator alone saturates the box, so
+# these figures describe the runner at least as much as the application. They are a REGRESSION
+# signal across commits on identical hardware -- not a capacity claim.
+#
+# Real capacity numbers need a multi-node cluster with load driven from a separate machine.
+# See load_tests/BASELINE.md.
 
 on:
   workflow_dispatch:
@@ -44,6 +56,8 @@ jobs:
           chmod +x ./mvnw
           ./mvnw clean package -DskipTests
 
+      # The backend image now packages the jar built above rather than recompiling from source
+      # inside Docker, so CI compiles once.
       - name: Build Docker Images
         run: |
           docker build -t url-shortener-backend:latest ./backend
@@ -54,6 +68,11 @@ jobs:
         with:
           cluster_name: kind
           wait: 120s
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
 
       - name: Load Docker Images into KinD
         run: |
@@ -66,16 +85,28 @@ jobs:
           kubectl patch deployment metrics-server -n kube-system --type='json' -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
           kubectl rollout status deployment metrics-server -n kube-system --timeout=120s
 
-      - name: Apply Kubernetes Manifests
+      # Same chart and same Spring profile as production. The loadtest overlay changes only
+      # replica ceilings and resource sizing -- rate-limit quotas are now the production ones,
+      # with the generator allowlisted by shared secret instead.
+      - name: Deploy via Helm
         run: |
-          kubectl apply -f k8s/
+          helm upgrade --install urlshortener ./chart \
+            -f chart/values-loadtest.yaml \
+            --wait --timeout 10m
 
-      - name: Wait for Kubernetes Deployments to be Ready
-        run: |
-          kubectl rollout status deployment/postgres --timeout=180s
-          kubectl rollout status deployment/valkey --timeout=180s
-          kubectl rollout status deployment/url-shortener-backend --timeout=300s
-          kubectl rollout status deployment/url-shortener-frontend --timeout=180s
+          echo "### Deployed configuration" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "Runner                : $(nproc) vCPU, $(free -g | awk '/^Mem:/{print $2}') GB RAM (hosts the cluster AND k6)" >> $GITHUB_STEP_SUMMARY
+          kubectl get configmap urlshortener-config -o jsonpath='{.data.HIKARI_MAX_POOL_SIZE}' \
+            | xargs -I{} echo "HikariCP pool per pod : {}" >> $GITHUB_STEP_SUMMARY
+          kubectl get configmap urlshortener-config -o jsonpath='{.data.DB_BULKHEAD_MAX_CONCURRENT}' \
+            | xargs -I{} echo "DB bulkhead           : {}" >> $GITHUB_STEP_SUMMARY
+          kubectl get hpa urlshortener-backend \
+            -o jsonpath='HPA replicas          : {.spec.minReplicas}-{.spec.maxReplicas}{"\n"}' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Record pre-test HPA state
+        run: kubectl get hpa urlshortener-backend -o wide
 
       - name: Setup k6
         uses: grafana/setup-k6-action@v1
@@ -83,23 +114,27 @@ jobs:
       - name: Run k6 Performance Test Suites
         env:
           RUN_MODE: ${{ github.event.inputs.run_mode || 'all' }}
+          # Quotas stay at production values; the generator is allowlisted. Without this, a
+          # per-IP limiter correctly reads k6 as a single-source flood and the run measures
+          # the limiter rather than the service.
+          RATE_LIMIT_BYPASS_SECRET: ci_loadgen_bypass_secret
         run: |
           run_suite() {
             SUITE_NAME=$1
             SUMMARY_FILE=$2
-            
+
             echo "=========================================="
             echo "🚀 Executing: ${SUITE_NAME}"
             echo "=========================================="
-            
+
             pkill -f "port-forward" || true
             sleep 1
-            kubectl port-forward svc/url-shortener-backend-service 8080:8080 &
+            kubectl port-forward svc/urlshortener-backend 8080:8080 &
             PF_PID=$!
             sleep 3
-            
+
             API_URL=http://localhost:8080 k6 run --summary-export=${SUMMARY_FILE} load_tests/${SUITE_NAME} || true
-            
+
             kill $PF_PID || true
           }
 
@@ -117,6 +152,40 @@ jobs:
             run_suite "soak_test.js" "k6-summary-soak.json"
           fi
 
+      - name: Capture autoscaling, connection and queue evidence
+        if: always()
+        run: |
+          echo "### Autoscaling evidence" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl get hpa urlshortener-backend -o wide 2>&1 >> $GITHUB_STEP_SUMMARY || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Backend pods at end of run: $(kubectl get pods -l app.kubernetes.io/component=backend --no-headers | wc -l)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # Proves the pool/max_connections invariant held under peak load -- the failure mode
+          # that previously capped success near 88%.
+          echo "### Postgres connection usage" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl exec urlshortener-postgres-0 -- \
+            psql -U postgres -d url_shortener -t \
+            -c "SELECT count(*) AS connections, (SELECT setting FROM pg_settings WHERE name='max_connections') AS max FROM pg_stat_activity;" \
+            2>&1 >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # Did analytics keep up? A stream that drained is the difference between "clicks were
+          # recorded" and "clicks were accepted and quietly dropped at MAXLEN".
+          echo "### Analytics drain" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl exec urlshortener-valkey-0 -- valkey-cli XLEN analytics:click:stream 2>&1 \
+            | sed 's/^/stream length: /' >> $GITHUB_STEP_SUMMARY || true
+          kubectl exec urlshortener-postgres-0 -- psql -U postgres -d url_shortener -t \
+            -c "SELECT count(*) AS clicks_persisted FROM url_clicks;" 2>&1 >> $GITHUB_STEP_SUMMARY || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          kubectl logs -l app.kubernetes.io/component=backend --tail=50 --prefix 2>&1 \
+            | grep -i "SQLTransientConnectionException\|connection is not available" \
+            && echo "::warning::Connection pool exhaustion detected" || echo "No pool exhaustion detected"
+
       - name: Generate Executive Summary & Incremental File Update
         if: always()
         env:
@@ -126,96 +195,59 @@ jobs:
           node -e '
           const fs = require("fs");
           const suites = [
-            { id: "load", name: "Standard Load Test", file: "k6-summary-load.json" },
-            { id: "spike", name: "Spike Burst Test", file: "k6-summary-spike.json" },
-            { id: "soak", name: "Soak / Endurance Test", file: "k6-summary-soak.json" }
+            { name: "Standard Load Test",   file: "k6-summary-load.json"  },
+            { name: "Spike Burst Test",     file: "k6-summary-spike.json" },
+            { name: "Soak / Endurance Test", file: "k6-summary-soak.json"  }
           ];
 
-          const resultsFile = "load_tests/PERFORMANCE_RESULTS.md";
+          const num = (v, digits = 1) => (v === undefined || v === null) ? "n/a" : v.toFixed(digits);
+          const ms  = (v) => v === undefined ? "n/a" : num(v) + " ms";
+          const pct = (v) => v === undefined ? "n/a" : num(v * 100, 2) + "%";
 
-          let currentData = {
-            "Standard Load Test": { reqs: "1,428,991", rps: "3966.7 req/s", passRate: "4.64%", avgLat: "450.1ms", p95Lat: "2655.0ms", status: "⚠️ HEAVY LOAD" },
-            "Spike Burst Test": { reqs: "96,836", rps: "318.8 req/s", passRate: "79.78%", avgLat: "1653.3ms", p95Lat: "8020.4ms", status: "⚠️ HEAVY LOAD" },
-            "Soak / Endurance Test": { reqs: "688,214", rps: "1636.7 req/s", passRate: "99.99%", avgLat: "272.1ms", p95Lat: "906.7ms", status: "✅ PASSED" }
-          };
-
-          if (fs.existsSync(resultsFile)) {
-            const content = fs.readFileSync(resultsFile, "utf8");
-            content.split("\n").forEach(line => {
-              const m = line.match(/^\|\s*\*\*([^*]+)\*\*\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|/);
-              if (m) {
-                const sName = m[1].trim();
-                currentData[sName] = {
-                  reqs: m[2].trim(),
-                  rps: m[3].trim(),
-                  passRate: m[4].trim(),
-                  avgLat: m[5].trim(),
-                  p95Lat: m[6].trim(),
-                  status: m[7].trim()
-                };
-              }
-            });
+          let rows = "";
+          for (const s of suites) {
+            if (!fs.existsSync(s.file)) {
+              rows += `| **${s.name}** | not run | | | | | |\n`;
+              continue;
+            }
+            const m = JSON.parse(fs.readFileSync(s.file, "utf8")).metrics || {};
+            const reqs     = (m.http_reqs || {}).count;
+            const rps      = (m.http_reqs || {}).rate;
+            const redirect = (m.redirect_duration || {})["p(95)"];
+            const create   = (m.create_duration   || {})["p(95)"];
+            const hit      = (m.redirect_cache_hit || {}).value;
+            const failed   = (m.redirect_failed    || {}).value;
+            const shed     = (m.responses_503 || {}).count || 0;
+            const status   = (failed !== undefined && failed < 0.01) ? "✅" : "⚠️";
+            rows += `| **${s.name}** | ${reqs ? reqs.toLocaleString() : "n/a"} | ${num(rps)} req/s | `
+                  + `${ms(redirect)} | ${ms(create)} | ${pct(hit)} | ${pct(failed)} | ${shed} | ${status} |\n`;
           }
 
-          const getMetric = (m, key) => m && m[key] ? (m[key].values || m[key]) : null;
-
-          suites.forEach(s => {
-            if (fs.existsSync(s.file)) {
-              try {
-                const data = JSON.parse(fs.readFileSync(s.file, "utf8"));
-                const m = data.metrics || {};
-                
-                const httpReqs = getMetric(m, "http_reqs");
-                const reqs = httpReqs && httpReqs.count ? httpReqs.count.toLocaleString() : "0";
-                const rps = httpReqs && httpReqs.rate ? `${httpReqs.rate.toFixed(1)} req/s` : "0 req/s";
-                
-                const dur = getMetric(m, "http_req_duration{expected_response:true}") || getMetric(m, "http_req_duration");
-                const avgLat = dur && dur.avg ? `${dur.avg.toFixed(1)}ms` : "N/A";
-                const p95Lat = dur && dur["p(95)"] !== undefined ? `${dur["p(95)"].toFixed(1)}ms` : "N/A";
-                
-                const failed = getMetric(m, "http_req_failed");
-                let passRate = "100%";
-                if (failed) {
-                  const ok = failed.fails || 0;
-                  const total = (failed.passes || 0) + ok;
-                  passRate = total > 0 ? `${((ok / total) * 100).toFixed(2)}%` : "100%";
-                }
-                
-                const failRatio = failed && failed.value !== undefined ? failed.value : 0;
-                const status = failRatio < 0.05 ? "✅ PASSED" : "⚠️ HEAVY LOAD";
-                
-                currentData[s.name] = { reqs, rps, passRate, avgLat, p95Lat, status };
-              } catch (e) {
-                console.error("Error parsing " + s.file, e);
-              }
-            }
-          });
-
-          let tableMd = "| Test Suite | Total Requests | Throughput (RPS) | Success Rate | Avg Latency | p95 Latency | Status |\n";
-          tableMd += "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n";
-
-          suites.forEach(s => {
-            const d = currentData[s.name] || { reqs: "N/A", rps: "N/A", passRate: "N/A", avgLat: "N/A", p95Lat: "N/A", status: "⚠️ Pending" };
-            tableMd += `| **${s.name}** | ${d.reqs} | ${d.rps} | ${d.passRate} | ${d.avgLat} | ${d.p95Lat} | ${d.status} |\n`;
-          });
-
-          const timestamp = new Date().toISOString();
-          let md = `# 📊 Automated k6 Performance Test Results\n\n`;
-          md += `> **Last Automated Run:** \`${timestamp}\`  \n`;
-          md += `> **Git Commit:** \`${process.env.COMMIT_SHA || "local"}\`  \n`;
-          md += `> **Branch:** \`${process.env.REF_NAME || "main"}\`  \n\n`;
-          md += `---  \n\n`;
-          md += `## 🚀 Executive Benchmark Summary\n\n` + tableMd;
+          let md = "# 📊 Tier B — Capacity suite (constrained single-node CI)\n\n";
+          md += "> **Last run:** `" + new Date().toISOString() + "`  \n";
+          md += "> **Commit:** `" + (process.env.COMMIT_SHA || "local") + "`  \n";
+          md += "> **Branch:** `" + (process.env.REF_NAME || "main") + "`  \n";
+          md += "> **Hardware:** one GitHub Actions runner (2–4 vCPU) hosting KinD, Postgres, Valkey,\n";
+          md += "> every backend pod **and** k6 itself.\n\n";
+          md += "**These are regression numbers, not capacity numbers.** The generator competes with the\n";
+          md += "system under test for the same handful of cores, so absolute latency here is dominated by\n";
+          md += "the runner. Compare them across commits, never against a real deployment.\n\n";
+          md += "| Test Suite | Requests | Throughput | Redirect p95 | Create p95 | Cache hit | Redirect errors | 503s shed | |\n";
+          md += "| :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :-: |\n";
+          md += rows;
+          md += "\nRedirect and create latency are reported separately because they are different\n";
+          md += "operations: one is a cache read, the other a Postgres write. A single blended p95 hides\n";
+          md += "both. Cache hit ratio is read from the `X-Cache` response header, not assumed.\n";
 
           fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, md);
-          fs.writeFileSync(resultsFile, md);
+          fs.writeFileSync("load_tests/PERFORMANCE_RESULTS.md", md);
           '
 
       - name: Commit & Push PERFORMANCE_RESULTS.md to Repository
         uses: stefanzweifel/git-auto-commit-action@v5
         if: always()
         with:
-          commit_message: "docs(ci): update automated k6 performance test results [skip ci]"
+          commit_message: "docs(ci): update Tier B capacity results [skip ci]"
           file_pattern: "load_tests/PERFORMANCE_RESULTS.md"
 
       - name: Upload k6 Test Results Artifacts

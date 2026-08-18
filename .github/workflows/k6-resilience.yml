@@ -1,0 +1,105 @@
+name: Tier C — Resilience (abuse resistance)
+
+# The most valuable artifact this project can produce: evidence that the defences work under
+# attack while legitimate users are unaffected. Success is inverted here -- attack traffic
+# SHOULD be refused, and refusal should be cheap enough not to move real users' latency.
+#
+# Manual, plus a nightly run so a regression in the limiter cannot sit undetected.
+
+on:
+  workflow_dispatch:
+    inputs:
+      attack_rate:
+        description: 'Attack requests per second, per attack scenario'
+        required: false
+        default: '400'
+  schedule:
+    - cron: '0 3 * * *'
+
+jobs:
+  resilience:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build jar and images
+        run: |
+          cd backend && chmod +x ./mvnw && ./mvnw -B clean package -DskipTests && cd ..
+          docker build -t url-shortener-backend:latest ./backend
+          docker build -t url-shortener-frontend:latest ./frontend
+
+      - uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: kind
+          wait: 120s
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: Load images and metrics-server
+        run: |
+          kind load docker-image url-shortener-backend:latest --name kind
+          kind load docker-image url-shortener-frontend:latest --name kind
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+          kubectl patch deployment metrics-server -n kube-system --type='json' \
+            -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
+          kubectl rollout status deployment metrics-server -n kube-system --timeout=120s
+
+      # Production rate-limit defaults, on purpose. Nothing about the limiter is relaxed for
+      # this run -- only the seeding phase is allowlisted, and seeding is setup, not measurement.
+      - name: Deploy with production abuse settings
+        run: |
+          helm upgrade --install urlshortener ./chart \
+            -f chart/values-loadtest.yaml \
+            --set config.rateLimitAnonCapacity=20 \
+            --set config.rateLimitAuthCapacity=200 \
+            --set config.trustProxyHeaders=false \
+            --wait --timeout 10m
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Run the resilience suite
+        env:
+          RATE_LIMIT_BYPASS_SECRET: ci_loadgen_bypass_secret
+          ATTACK_RATE: ${{ github.event.inputs.attack_rate || '400' }}
+        run: |
+          kubectl port-forward svc/urlshortener-backend 8080:8080 &
+          sleep 5
+          API_URL=http://localhost:8080 k6 run \
+            --summary-export=k6-summary-resilience.json \
+            load_tests/resilience_test.js
+
+      - name: Report
+        if: always()
+        run: |
+          node -e '
+          const fs = require("fs");
+          if (!fs.existsSync("k6-summary-resilience.json")) process.exit(0);
+          const m = JSON.parse(fs.readFileSync("k6-summary-resilience.json", "utf8")).metrics || {};
+          const pct = (v) => v === undefined ? "n/a" : (v * 100).toFixed(2) + "%";
+          const ms  = (v) => v === undefined ? "n/a" : v.toFixed(1) + " ms";
+          const legit = m.legit_redirect_duration || {};
+          let out = "## Tier C — Resilience\n\n";
+          out += "| Signal | Result |\n| :-- | :-- |\n";
+          out += `| Legitimate redirect p95 | ${ms(legit["p(95)"])} |\n`;
+          out += `| Legitimate redirect failures | ${pct((m.legit_redirect_failed||{}).value)} |\n`;
+          out += `| Single-IP flood rejected | ${pct((m.flood_blocked||{}).value)} |\n`;
+          out += `| Spoofed X-Forwarded-For flood rejected | ${pct((m.spoof_blocked||{}).value)} |\n`;
+          out += `| Attack creates that succeeded | ${(m.attack_requests_served||{}).count ?? 0} |\n`;
+          out += "\n> A spoofed-flood rejection rate near 100% is the evidence that per-request\n";
+          out += "> X-Forwarded-For no longer buys a fresh rate-limit bucket.\n";
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, out);
+          '
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-resilience-summary
+          path: k6-summary-resilience.json

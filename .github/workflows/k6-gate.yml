@@ -1,0 +1,154 @@
+name: CI Gate (build, tests, Tier A k6)
+
+# TIER A of the three-tier strategy (see plan.md Stage 7).
+#
+# Runs on every pull request and must stay fast enough that nobody is tempted to skip it.
+# Deliberately small: at 150 VUs the runner is not the bottleneck, so a threshold breach means
+# the code changed rather than that the hardware was busy. Capacity claims come from Tier B,
+# which is manual and honest about its hardware.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Backend unit tests
+        run: |
+          cd backend
+          chmod +x ./mvnw
+          ./mvnw -B test
+
+      - name: Frontend typecheck and build
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Package backend jar
+        run: cd backend && ./mvnw -B package -DskipTests
+
+      # The image is built FROM this jar rather than recompiling inside Docker, so what runs in
+      # the gate is the artifact the tests just passed against.
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: backend/target/*.jar
+          retention-days: 1
+
+  k6-gate:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-jar
+          path: backend/target
+
+      - name: Build images
+        run: |
+          docker build -t url-shortener-backend:latest ./backend
+          docker build -t url-shortener-frontend:latest ./frontend
+
+      - uses: helm/kind-action@v1.10.0
+        with:
+          cluster_name: kind
+          wait: 120s
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: Load images into KinD
+        run: |
+          kind load docker-image url-shortener-backend:latest --name kind
+          kind load docker-image url-shortener-frontend:latest --name kind
+
+      - name: Install metrics-server (for HPA)
+        run: |
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+          kubectl patch deployment metrics-server -n kube-system --type='json' \
+            -p='[{"op": "add", "path": "/spec/template/spec/containers/0/args/-", "value": "--kubelet-insecure-tls"}]'
+          kubectl rollout status deployment metrics-server -n kube-system --timeout=120s
+
+      - name: Deploy
+        run: |
+          helm upgrade --install urlshortener ./chart \
+            -f chart/values-loadtest.yaml \
+            --set backend.hpa.minReplicas=2 \
+            --wait --timeout 10m
+
+      - name: Verify the migration hook ran
+        run: |
+          # The pre-upgrade Job is hook-deleted on success, so its absence plus a healthy
+          # rollout is the pass condition. A failed migration fails `helm upgrade` above.
+          kubectl get jobs -l app.kubernetes.io/component=migrate || true
+          echo "Schema version:"
+          kubectl exec urlshortener-postgres-0 -- psql -U postgres -d url_shortener -t \
+            -c "SELECT max(version) FROM flyway_schema_history;"
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Tier A gate
+        env:
+          # Matches secrets.rateLimitBypassSecret in values-loadtest.yaml. Quotas are at their
+          # production values; the generator is allowlisted rather than the limits relaxed.
+          RATE_LIMIT_BYPASS_SECRET: ci_loadgen_bypass_secret
+        run: |
+          kubectl port-forward svc/urlshortener-backend 8080:8080 &
+          sleep 5
+          # No `|| true`. A threshold breach fails the pull request; that is the entire point.
+          API_URL=http://localhost:8080 k6 run \
+            --summary-export=k6-summary-gate.json \
+            load_tests/gate_test.js
+
+      - name: Connection budget held
+        if: always()
+        run: |
+          echo "### Tier A gate" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          kubectl exec urlshortener-postgres-0 -- psql -U postgres -d url_shortener -t \
+            -c "SELECT count(*) AS connections, (SELECT setting FROM pg_settings WHERE name='max_connections') AS max FROM pg_stat_activity;" \
+            >> $GITHUB_STEP_SUMMARY 2>&1 || true
+          kubectl get hpa urlshortener-backend -o wide >> $GITHUB_STEP_SUMMARY 2>&1 || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          # Hard failure. Pool exhaustion is the specific defect this gate exists to catch, and
+          # it is unambiguous in the logs.
+          if kubectl logs -l app.kubernetes.io/component=backend --tail=-1 --prefix 2>/dev/null \
+             | grep -qi "SQLTransientConnectionException\|Connection is not available"; then
+            echo "::error::Connection pool exhaustion detected during the gate run"
+            exit 1
+          fi
+          echo "No pool exhaustion detected"
+
+      - name: Upload gate summary
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-gate-summary
+          path: k6-summary-gate.json

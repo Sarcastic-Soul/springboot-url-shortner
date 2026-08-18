@@ -1,0 +1,122 @@
+name: Chart Lint
+
+# Fast gate: catches chart breakage on every PR without paying for a full KinD + k6 run.
+# Renders each environment so a values file that only breaks in prod cannot merge green, and
+# asserts the two invariants that were previously violated silently.
+on:
+  pull_request:
+    paths:
+      - 'chart/**'
+      - '.github/workflows/chart-lint.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'chart/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: helm lint (all environments)
+        run: |
+          helm lint ./chart -f chart/values-dev.yaml
+          helm lint ./chart -f chart/values-loadtest.yaml
+          helm lint ./chart -f chart/values-prod.yaml \
+            --set secrets.postgresUser=ci \
+            --set secrets.postgresPassword=ci \
+            --set secrets.jwtSecret=ci
+
+      - name: helm template (all environments)
+        run: |
+          helm template urlshortener ./chart -f chart/values-dev.yaml      > /dev/null
+          helm template urlshortener ./chart -f chart/values-loadtest.yaml > /dev/null
+          helm template urlshortener ./chart -f chart/values-prod.yaml \
+            --set secrets.postgresUser=ci \
+            --set secrets.postgresPassword=ci \
+            --set secrets.jwtSecret=ci > /dev/null
+
+      - name: Secrets must be required, not defaulted
+        run: |
+          if helm template urlshortener ./chart -f chart/values-prod.yaml > /dev/null 2>&1; then
+            echo "::error::values-prod.yaml rendered without secrets being supplied"
+            exit 1
+          fi
+          echo "OK: prod install correctly fails when secrets are absent"
+
+      - name: Connection budget invariant
+        run: |
+          # pool_per_pod * maxReplicas, plus the one-shot task pods, must never exceed the
+          # Postgres budget. This is the defect that capped success rate at ~88%: a pool of 50
+          # across maxReplicas 15 demanded 750 connections against max_connections=200.
+          set -euo pipefail
+          TASK_POD_CONNECTIONS=6   # migrate + 2 CronJobs, capped at 2 connections each
+          for env in dev loadtest prod; do
+            out=$(helm template urlshortener ./chart -f "chart/values-$env.yaml" \
+                    --set secrets.postgresUser=ci \
+                    --set secrets.postgresPassword=ci \
+                    --set secrets.jwtSecret=ci)
+            pool=$(echo "$out" | grep -m1 'HIKARI_MAX_POOL_SIZE:' | tr -dc '0-9')
+            maxr=$(echo "$out" | grep -m1 'maxReplicas:'          | tr -dc '0-9')
+            maxc=$(echo "$out" | grep -m1 'max_connections='      | tr -dc '0-9')
+            peak=$(( pool * maxr + TASK_POD_CONNECTIONS ))
+            echo "$env: pool=$pool x maxReplicas=$maxr + tasks=$TASK_POD_CONNECTIONS = $peak vs max_connections=$maxc"
+            if [ "$peak" -gt "$maxc" ]; then
+              echo "::error::$env oversubscribes Postgres: $peak > $maxc"
+              exit 1
+            fi
+          done
+
+      - name: Forwarded headers may only be trusted behind an ingress
+        run: |
+          # Trusting X-Forwarded-For with nothing in front of the Service means every caller
+          # picks their own rate-limit bucket. Rendering the pair together makes that
+          # combination impossible to ship by accident.
+          set -euo pipefail
+          for env in dev loadtest prod; do
+            out=$(helm template urlshortener ./chart -f "chart/values-$env.yaml" \
+                    --set secrets.postgresUser=ci \
+                    --set secrets.postgresPassword=ci \
+                    --set secrets.jwtSecret=ci)
+            trust=$(echo "$out" | grep -m1 'TRUST_PROXY_HEADERS:' | tr -d ' "' | cut -d: -f2)
+            ingress=$(echo "$out" | grep -c '^kind: Ingress' || true)
+            echo "$env: trustProxyHeaders=$trust ingress=$ingress"
+            if [ "$trust" = "true" ] && [ "$ingress" -eq 0 ]; then
+              echo "::error::$env trusts forwarded headers with no ingress in the path"
+              exit 1
+            fi
+          done
+
+  observability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: Resolve upstream charts
+        run: |
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+          helm repo add grafana https://grafana.github.io/helm-charts
+          helm repo update
+          helm dependency build chart/observability
+
+      - name: Lint and render
+        run: |
+          helm lint chart/observability
+          helm template observability chart/observability > /dev/null
+
+      - name: Dashboards must be valid Grafana JSON
+        run: |
+          # A dashboard that fails to parse is silently ignored by the sidecar, which looks
+          # exactly like a dashboard that was never provisioned.
+          for f in chart/observability/dashboards/*.json; do
+            python3 -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['panels'], 'no panels'; print(sys.argv[1], 'ok —', len(d['panels']), 'panels')" "$f"
+          done

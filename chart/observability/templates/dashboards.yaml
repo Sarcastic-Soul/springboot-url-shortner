@@ -1,0 +1,18 @@
+{{/*
+Dashboards as ConfigMaps, picked up by the Grafana sidecar via the grafana_dashboard label.
+
+The README's Grafana screenshot used to come from a dashboard that existed only inside one
+developer's Minikube -- it vanished on `minikube delete` and never ran in CI. These are in git.
+*/}}
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $.Release.Name }}-dashboard-{{ base $path | trimSuffix ".json" }}
+  labels:
+    grafana_dashboard: "1"
+data:
+  {{ base $path }}: |
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}

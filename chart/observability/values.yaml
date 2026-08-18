@@ -1,0 +1,88 @@
+# Install with the release name `observability`, which is what the app chart's
+# metrics.serviceMonitor.labels.release expects:
+#
+#   helm upgrade --install observability chart/observability -n monitoring --create-namespace
+#
+# then turn the app chart's ServiceMonitor and PrometheusRule on.
+
+kube-prometheus-stack:
+  enabled: true
+
+  prometheus:
+    prometheusSpec:
+      retention: 7d
+      # Pick up ServiceMonitors and PrometheusRules from any namespace with any labels.
+      # The default only matches its own release's label, which silently ignores the
+      # application's ServiceMonitor and leaves you staring at an empty dashboard.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      resources:
+        requests: { cpu: 200m, memory: 1Gi }
+        limits:   { cpu: "1",  memory: 2Gi }
+
+  alertmanager:
+    alertmanagerSpec:
+      resources:
+        requests: { cpu: 25m, memory: 128Mi }
+        limits:   { cpu: 200m, memory: 256Mi }
+
+  grafana:
+    enabled: true
+    defaultDashboardsTimezone: browser
+    sidecar:
+      dashboards:
+        enabled: true
+        # Dashboards ship as ConfigMaps in this chart, so they are versioned with the code
+        # rather than clicked together and lost on the next `minikube delete`.
+        label: grafana_dashboard
+        searchNamespace: ALL
+      datasources:
+        enabled: true
+    additionalDataSources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://observability-loki:3100
+        jsonData:
+          # Jump straight from a log line to its trace of requests. This is the payoff for
+          # RequestIdFilter: without a correlation id there is nothing to derive a field from.
+          derivedFields:
+            - name: requestId
+              matcherRegex: '"requestId":"([^"]+)"'
+              url: '$${__value.raw}'
+    resources:
+      requests: { cpu: 50m,  memory: 128Mi }
+      limits:   { cpu: 500m, memory: 512Mi }
+
+# Serves the HPA's custom metric. Without it, `http_requests_per_second` is a metric no API can
+# answer, which produces FailedGetPodsMetric and -- because an unavailable metric blocks
+# scale-DOWN -- an autoscaler biased towards never scaling in.
+prometheus-adapter:
+  enabled: true
+  prometheus:
+    url: http://observability-kube-promet-prometheus.monitoring.svc
+    port: 9090
+  rules:
+    default: false
+    custom:
+      - seriesQuery: 'http_server_requests_seconds_count{namespace!="",pod!=""}'
+        resources:
+          overrides:
+            namespace: { resource: namespace }
+            pod: { resource: pod }
+        name:
+          matches: "^http_server_requests_seconds_count$"
+          as: "http_requests_per_second"
+        metricsQuery: sum(rate(<<.Series>>{<<.LabelMatchers>>}[2m])) by (<<.GroupBy>>)
+
+loki-stack:
+  enabled: true
+  loki:
+    enabled: true
+    persistence:
+      enabled: false
+  promtail:
+    enabled: true
+  grafana:
+    enabled: false      # kube-prometheus-stack already ships one

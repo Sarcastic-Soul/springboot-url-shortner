@@ -1,0 +1,26 @@
+apiVersion: v2
+name: observability
+description: Prometheus, Grafana, Loki and prometheus-adapter for the URL shortener
+type: application
+version: 0.1.0
+
+# A separate chart, not a dependency of the application chart, for two reasons: the app chart
+# stays installable and lintable with no network and no CRDs, and the monitoring stack has a
+# different lifecycle from the service it watches.
+#
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm repo add grafana https://grafana.github.io/helm-charts
+#   helm dependency build chart/observability
+dependencies:
+  - name: kube-prometheus-stack
+    version: "65.5.1"
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: kube-prometheus-stack.enabled
+  - name: prometheus-adapter
+    version: "4.11.0"
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: prometheus-adapter.enabled
+  - name: loki-stack
+    version: "2.10.2"
+    repository: https://grafana.github.io/helm-charts
+    condition: loki-stack.enabled

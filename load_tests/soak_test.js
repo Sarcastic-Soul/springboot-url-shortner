@@ -1,51 +1,34 @@
-import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { sleep } from 'k6';
+import { seedShortCodes, realisticIteration } from './lib/workload.js';
 
 /**
- * SOAK TEST (ENDURANCE TEST)
- * Goal: Verify stability, memory management, database connection health, and Redis cache efficiency over prolonged sustained load.
+ * TIER B — SOAK
+ *
+ * Steady load held long enough for slow failures to show: connection leaks, heap growth, an
+ * analytics stream that drains slower than it fills. Watch `analytics_stream_length` and
+ * `hikaricp_connections_pending` in Grafana alongside this run — a soak that only reports
+ * latency cannot distinguish "stable" from "degrading slowly".
  */
 export const options = {
   stages: [
-    { duration: '1m', target: 1000 },
-    { duration: __ENV.SOAK_HOLD_DURATION || '5m', target: 1000 },
+    { duration: '1m', target: Number(__ENV.SOAK_VUS || 1000) },
+    { duration: __ENV.SOAK_HOLD_DURATION || '5m', target: Number(__ENV.SOAK_VUS || 1000) },
     { duration: '1m', target: 0 },
   ],
   thresholds: {
-    http_req_duration: [__ENV.P95_THRESHOLD || 'p(95)<2000'],
-    http_req_failed: [__ENV.MAX_ERROR_RATE || 'rate<0.01'],
+    redirect_duration:  [__ENV.REDIRECT_P95 || 'p(95)<400'],
+    create_duration:    [__ENV.CREATE_P95   || 'p(95)<1500'],
+    redirect_failed:    [__ENV.MAX_REDIRECT_ERROR_RATE || 'rate<0.01'],
+    create_failed:      [__ENV.MAX_CREATE_ERROR_RATE   || 'rate<0.01'],
+    redirect_cache_hit: [__ENV.MIN_CACHE_HIT || 'rate>0.90'],
   },
 };
 
-const BASE_URL = __ENV.API_URL || 'http://192.168.49.2:30080';
+export function setup() {
+  return { codes: seedShortCodes() };
+}
 
-export default function () {
-  const payload = JSON.stringify({
-    originalUrl: `https://example.com/soak-test-${Math.floor(Math.random() * 1000000)}`,
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-  });
-
-  const params = {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  };
-
-  // 1. Create short URL
-  const createRes = http.post(`${BASE_URL}/api/v1/urls`, payload, params);
-  check(createRes, {
-    'create status is 200': (r) => r.status === 200,
-  });
-
-  // 2. Resolve short URL
-  if (createRes.status === 200) {
-    const shortCode = createRes.json('shortCode');
-    const resolveRes = http.get(`${BASE_URL}/${shortCode}`, { redirects: 0 });
-    check(resolveRes, {
-      'redirect status is 302 or 301': (r) => r.status === 302 || r.status === 301,
-    });
-  }
-
-  // Consistent pacing for sustained throughput
+export default function (data) {
+  realisticIteration(data.codes);
   sleep(0.5);
 }

@@ -1,54 +1,38 @@
-import http from 'k6/http';
-import { check, sleep } from 'k6';
+import { sleep } from 'k6';
+import { seedShortCodes, realisticIteration } from './lib/workload.js';
 
 /**
- * SPIKE TEST
- * Goal: Test system behavior, dynamic HPA autoscaling response, and recovery under sudden, extreme traffic spikes.
+ * TIER B — SPIKE
+ *
+ * A 40x traffic burst in ten seconds, then a sustained hold long enough for the HPA to react,
+ * then a drop. Answers: does it survive the burst, does it scale, and does it recover — with
+ * latency still split by operation so "it got slower" can be attributed.
  */
 export const options = {
   stages: [
-    { duration: '10s', target: 100 },   // Normal baseline load
-    { duration: '1m',  target: 100 },   // Maintain baseline
-    { duration: '10s', target: 4000 },  // SPIKE: Rapid burst to 4,000 VUs in 10 seconds
-    { duration: '2m',  target: 4000 },  // Hold spike load to trigger HPA autoscaling
-    { duration: '10s', target: 100 },   // Drop rapidly back to 100 VUs
-    { duration: '1m',  target: 100 },   // Recovery observation period
-    { duration: '10s', target: 0 },     // Ramp down completely
+    { duration: '10s', target: 100 },
+    { duration: '1m',  target: 100 },
+    { duration: '10s', target: Number(__ENV.SPIKE_VUS || 4000) },
+    { duration: '2m',  target: Number(__ENV.SPIKE_VUS || 4000) },
+    { duration: '10s', target: 100 },
+    { duration: '1m',  target: 100 },
+    { duration: '10s', target: 0 },
   ],
   thresholds: {
-    http_req_duration: [__ENV.P95_THRESHOLD || 'p(95)<3000'],
-    http_req_failed: [__ENV.MAX_ERROR_RATE || 'rate<0.05'],
+    redirect_duration:  [__ENV.REDIRECT_P95 || 'p(95)<1500'],
+    create_duration:    [__ENV.CREATE_P95   || 'p(95)<3000'],
+    // A spike is allowed to shed load — that is the bulkhead doing its job — but the cache
+    // path should not be failing.
+    redirect_failed:    [__ENV.MAX_REDIRECT_ERROR_RATE || 'rate<0.05'],
+    redirect_cache_hit: [__ENV.MIN_CACHE_HIT || 'rate>0.90'],
   },
 };
 
-const BASE_URL = __ENV.API_URL || 'http://192.168.49.2:30080';
+export function setup() {
+  return { codes: seedShortCodes() };
+}
 
-export default function () {
-  const payload = JSON.stringify({
-    originalUrl: `https://example.com/spike-test-${Math.floor(Math.random() * 1000000)}`,
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-  });
-
-  const params = {
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  };
-
-  // 1. Create short URL
-  const createRes = http.post(`${BASE_URL}/api/v1/urls`, payload, params);
-  check(createRes, {
-    'create status 200 or 429': (r) => r.status === 200 || r.status === 429,
-  });
-
-  // 2. Resolve short URL if creation succeeded
-  if (createRes.status === 200) {
-    const shortCode = createRes.json('shortCode');
-    const resolveRes = http.get(`${BASE_URL}/${shortCode}`, { redirects: 0 });
-    check(resolveRes, {
-      'redirect status is 302 or 301': (r) => r.status === 302 || r.status === 301,
-    });
-  }
-
+export default function (data) {
+  realisticIteration(data.codes);
   sleep(0.1);
 }

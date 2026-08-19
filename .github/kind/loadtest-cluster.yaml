@@ -1,0 +1,20 @@
+# KinD cluster for the k6 tiers.
+#
+# Exists so the load generator can reach the backend through the Service's NodePort instead of
+# `kubectl port-forward`. port-forward resolves a Service to ONE pod and tunnels every
+# connection to it, so the gate was driving 150 VUs into a single 1-CPU replica while
+# `replicas: 2` and an HPA ceiling of 8 sat there doing nothing. Through the NodePort,
+# kube-proxy load-balances across every backend pod and the HPA becomes observable.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # backend.service.nodePort in chart/values-loadtest.yaml
+      - containerPort: 30080
+        hostPort: 30080
+        protocol: TCP
+      # frontend.service.nodePort, for suites that exercise the UI origin
+      - containerPort: 30000
+        hostPort: 30000
+        protocol: TCP

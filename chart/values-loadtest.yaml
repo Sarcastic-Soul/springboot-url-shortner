@@ -78,14 +78,14 @@ config:
   rateLimitEnabled: true
   rateLimitAnonCapacity: 20     # production values, not benchmark-flattering ones
   rateLimitAuthCapacity: 200
-  # CI port-forwards the Service; there is no proxy in the path, so the header must not be
+  # CI reaches the Service directly; there is no proxy in the path, so the header must not be
   # trusted. This is also what lets the resilience suite prove spoofing does not work.
   trustProxyHeaders: false
   analytics:
     retentionDays: 7
   logLevelRoot: WARN
   logLevelApp: WARN         # keep log volume off the hot path during benchmarks
-  appBaseUrl: http://localhost:8080
+  appBaseUrl: http://localhost:30080
 
 maintenance:
   jobs:
@@ -101,4 +101,4 @@ secrets:
   rateLimitBypassSecret: ci_loadgen_bypass_secret
 
 ingress:
-  enabled: false            # CI port-forwards the backend Service directly
+  enabled: false            # CI drives the backend Service's NodePort directly

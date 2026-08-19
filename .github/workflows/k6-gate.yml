@@ -78,6 +78,9 @@ jobs:
         with:
           cluster_name: kind
           wait: 120s
+          # Maps the Service NodePorts onto the runner, so k6 drives the whole backend
+          # Deployment through kube-proxy rather than one pod through a port-forward tunnel.
+          config: .github/kind/loadtest-cluster.yaml
 
       - uses: azure/setup-helm@v4
         with:
@@ -146,12 +149,42 @@ jobs:
           # production values; the generator is allowlisted rather than the limits relaxed.
           RATE_LIMIT_BYPASS_SECRET: ci_loadgen_bypass_secret
         run: |
-          kubectl port-forward svc/urlshortener-backend 8080:8080 &
-          sleep 5
+          # The NodePort, not a port-forward: kube-proxy spreads the load over every backend
+          # replica. A port-forward tunnels to a single pod, which made the HPA and the replica
+          # count decorative and measured one CPU-limited JVM.
+          for i in $(seq 30); do
+            curl -sf http://localhost:30080/actuator/health/readiness >/dev/null && break
+            sleep 2
+          done
+          curl -sf http://localhost:30080/actuator/health/readiness >/dev/null \
+            || { echo "::error::backend NodePort never became ready"; exit 1; }
+
           # No `|| true`. A threshold breach fails the pull request; that is the entire point.
-          API_URL=http://localhost:8080 k6 run \
+          API_URL=http://localhost:30080 k6 run \
             --summary-export=k6-summary-gate.json \
             load_tests/gate_test.js
+
+      - name: What the backend said
+        if: failure()
+        run: |
+          # A 14% redirect failure rate once reached main with nothing in the CI log to say what
+          # the failing status even was -- diagnosing it needed a local reproduction. k6 reports
+          # the symptom; only the backend knows the cause, so dump it whenever a threshold breaks.
+          echo "::group::backend exceptions"
+          kubectl logs -l app.kubernetes.io/component=backend --tail=-1 --prefix 2>/dev/null \
+            | grep -iE "exception|error|WARN" | tail -100 || true
+          echo "::endgroup::"
+          echo "::group::shed and drop counters"
+          for metric in analytics_clicks_dropped_total redirect_cache_lookups_total \
+                        resilience4j_bulkhead_available_concurrent_calls; do
+            echo "--- $metric ---"
+            curl -s http://localhost:30080/actuator/prometheus | grep "^$metric" || true
+          done
+          echo "::endgroup::"
+          echo "::group::pods and HPA"
+          kubectl get pods -o wide || true
+          kubectl describe hpa urlshortener-backend || true
+          echo "::endgroup::"
 
       - name: Connection budget held
         if: always()
